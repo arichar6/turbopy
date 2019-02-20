@@ -131,7 +131,7 @@ class Module:
 
     def inspect_resource(self, resource: dict):
         """If your subclass needs the data described by the key, now's their chance to save a pointer to the data"""
-        raise NotImplementedError
+        pass
 
     def exchange_resources(self):
         """This is the function where you call publish_resource, to tell other modules about data you want to share"""
@@ -141,7 +141,7 @@ class Module:
         raise NotImplementedError
     
     def reset(self):
-        raise NotImplementedError
+        pass
     
     def initialize(self):
         pass
