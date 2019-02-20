@@ -1,32 +1,63 @@
 from turbopy import Simulation, Module
 
-class MyModule(Module):
+
+class FieldModel(Module):
+    """
+    This is the abstract base class for field models
+    """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        print("MyModule Loaded: ", input_data["param"])
-        self.x = input_data["param"]
-    
-    def update(self):
-        print(self.owner.clock.time * self.x)
-    
-    def exchange_resources(self):
-        self.publish_resource({"MyModule:x": self.x})
-    
-    def inspect_resource(self, resource):
-        for k,v in resource.items():
-            print("I don't need:", k, v)
+        self.E = owner.grid.field_factory(3)
+        self.B = owner.grid.field_factory(3)
+        self.currents = []
 
-Module.add_module_to_library("MyModule", MyModule)
+    def inspect_resource(self, resource):
+        """This modules needs to keep track of current sources"""
+        if "ResponseModel:J" in resource:
+            print("adding current resource")
+            self.currents.append(resource["ResponseModel:J"])
+
+    def exchange_resources(self):
+        """Tell other modules about the electric field, in case the need it"""
+        self.publish_resource({"FieldModel:E": self.E})
+        self.publish_resource({"FieldModel:B": self.B})
+
+    def update(self):
+        self.E[0,0] = self.owner.clock.time
+
+
+class PlasmaResponseModel(Module):
+    """
+    This is the abstract base class for plasma response models
+    """
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.J = owner.grid.field_factory(1)  # only Jz for now
+        self.E = None
+
+    def exchange_resources(self):
+        self.publish_resource({"ResponseModel:J": self.J})
+
+    def inspect_resource(self, resource):
+        if "FieldModel:E" in resource:
+            print("adding E-field resource")
+            self.E = resource["FieldModel:E"]
+
+    def update(self):
+        print(self.E[0,0])
+
+
+Module.add_module_to_library("FieldModel", FieldModel)
+Module.add_module_to_library("PlasmaResponseModel", PlasmaResponseModel)
+
 
 sim_config = {"Modules": [
-        {"name": "MyModule",
-         "param": 3.14,
+        {"name": "FieldModel",
          },
-        {"name": "MyModule",
-         "param": 22,
+        {"name": "PlasmaResponseModel",
          },         
     ],
-    "Grid": {},
+    "Grid": {"N": 8},
     "Clock": {"start_time": 0,
               "end_time": 3}
     }

@@ -2,6 +2,7 @@
 #
 # Based on the structure of turboWAVE
 #
+import numpy as np
 
 class Simulation:
     """
@@ -182,4 +183,8 @@ class Diagnostic:
 class Grid:
     def __init__(self, grid_data: dict):
         self.grid_data = grid_data
+        self.num_points = grid_data["N"]
+    
+    def field_factory(self, num_components=1):
+        return np.zeros((self.num_points, num_components))
         
