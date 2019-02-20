@@ -56,6 +56,9 @@ class Simulation:
         print("Reading Diagnostics...")
         self.read_diagnostics_from_input()
         
+        print("Initializing Simulation Clock...")
+        self.read_clock_from_input()
+        
         print("Initializing Tools...")
         for t in self.compute_tools:
             t.initialize()
@@ -69,13 +72,16 @@ class Simulation:
         print("Initializing Diagnostics...")
         for d in self.diagnostics:
             d.initialize()
-    
+            
     def finalize_simulation(self):
         for d in self.diagnostics:
             d.finalize()
     
     def read_grid_from_input(self):
         self.grid = Grid(self.input_data["Grid"])
+    
+    def read_clock_from_input(self):
+        self.clock = SimulationClock(self, self.input_data["Clock"])
     
     def read_tools_from_input(self):
         pass
@@ -152,10 +158,17 @@ class ComputeTool:
 
 
 class SimulationClock:
-    def __init__(self, owner: Simulation):
+    def __init__(self, owner: Simulation, clock_data: dict):
         self.owner = owner
-        raise NotImplementedError
-
+        self.time = clock_data["start_time"]
+        self.end_time = clock_data["end_time"]
+    
+    def advance(self):
+        self.time = self.time + 1
+    
+    def is_running(self):
+        return self.time <= self.end_time
+    
 
 class Diagnostic:
     def __init__(self, owner: Simulation):
