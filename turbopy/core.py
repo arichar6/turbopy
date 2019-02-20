@@ -5,7 +5,9 @@
 
 class Simulation:
     """
-    This "owns" all the physics modules, and coordinates them
+    This "owns" all the physics modules and compute tools, and coordinates them.
+    The main simulation loop is driven by an instance of this class.
+    
     Based on the Simulation class in TurboWAVE
     """
     def __init__(self):
@@ -25,47 +27,73 @@ class Simulation:
         print("Simulation is starting")
         while self.clock.is_running():
             self.fundamental_cycle()
+        
+        self.finalize_simulation()        
         print("Simulation complete")
     
     def fundamental_cycle(self):
-        self.diagnose()
-        
+        for d in self.diagnostics:
+            d.diagnose()
         for m in self.modules:
             m.reset()
-        
         for m in self.modules:
             m.update()
-        
         self.clock.advance()
-        
-    def diagnose(self):
-        for d in self.diagnostics:
-            if d.write_this_step(self.clock):
-                d.diagnose()
-    
+
     def prepare_simulation(self):
         print("Reading Grid...")
         self.read_grid_from_input()
+        
         print("Reading Tools...")
         self.read_tools_from_input()
+        
         print("Reading Modules...")
         self.read_modules_from_input()
         self.sort_modules()
+        
+        print("Reading Diagnostics...")
+        self.read_diagnostics_from_input()
+        
         print("Initializing Tools...")
         for t in self.compute_tools:
             t.initialize()
+        
         print("Initializing Modules...")
+        for m in self.modules:
+            m.exchange_resources()
         for m in self.modules:
             m.initialize()
 
+        print("Initializing Diagnostics...")
+        for d in self.diagnostics:
+            d.initialize()
+    
+    def finalize_simulation(self):
+        for d in self.diagnostics:
+            d.finalize()
+    
+    def read_grid_from_input(self):
+        raise NotImplementedError
+    
+    def read_tools_from_input(self):
+        raise NotImplementedError
+    
+    def read_modules_from_input(self):
+        raise NotImplementedError
+    
+    def read_diagnostics_from_input(self):
+        raise NotImplementedError
+            
 
 class Module:
     """
     This is the base class for all physics modules
     Based on Module class in TurboWAVE
 
-    Because python mutable/immutable is different than C++ pointers, the implementation here is different.
-    Here, a "resource" is a dictionary, and can have more than one thing being shared
+    Because python mutable/immutable is different than C++ pointers, the implementation 
+    here is different. Here, a "resource" is a dictionary, and can have more than one 
+    thing being shared. Note that the value stored in the dictionary needs to be mutable. 
+    Make sure not to reinitialize, because other modules will be holding a reference to it.
     """
     def __init__(self, owner: Simulation):
         self.owner = owner
@@ -87,8 +115,13 @@ class Module:
         
 
 class ComputeTool:
-    pass
+    raise NotImplementedError
 
 
 class SimulationClock:
-    pass
+    raise NotImplementedError
+
+
+class Diagnostic:
+    raise NotImplementedError
+
