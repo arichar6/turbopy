@@ -10,7 +10,7 @@ class Simulation:
     
     Based on the Simulation class in TurboWAVE
     """
-    def __init__(self):
+    def __init__(self, input_data: dict):
         self.modules = []
         self.compute_tools = []
         self.diagnostics = []
@@ -18,13 +18,15 @@ class Simulation:
         self.grid = None
         self.clock = None
         self.units = None
+        
+        self.input_data = input_data
     
     def run(self):
         print("Simulation is initializing")
         self.prepare_simulation()
         print("Initialization complete")
         
-        print("Simulation is starting")
+        print("Simulation is started")
         while self.clock.is_running():
             self.fundamental_cycle()
         
@@ -73,16 +75,25 @@ class Simulation:
             d.finalize()
     
     def read_grid_from_input(self):
-        raise NotImplementedError
+        self.grid = Grid(self.input_data["Grid"])
     
     def read_tools_from_input(self):
-        raise NotImplementedError
+        pass
     
     def read_modules_from_input(self):
-        raise NotImplementedError
+        for module_data in self.input_data["Modules"]:
+            module_name = module_data["name"]
+            try:
+                module_class = Module.module_library[module_name]
+            except KeyError:
+                raise KeyError("Module {0} not found in module library".format(module_name))
+            self.modules.append(module_class(owner=self, input_data=module_data))
     
     def read_diagnostics_from_input(self):
-        raise NotImplementedError
+        pass
+    
+    def sort_modules(self):
+        pass
             
 
 class Module:
@@ -95,8 +106,18 @@ class Module:
     thing being shared. Note that the value stored in the dictionary needs to be mutable. 
     Make sure not to reinitialize, because other modules will be holding a reference to it.
     """
-    def __init__(self, owner: Simulation):
+    module_library = {}
+    
+    @classmethod
+    def add_module_to_library(cls, module_name, module_class):
+        if module_name in cls.module_library:
+            raise ValueError("Module {0} already in module library".format(module_name))
+        cls.module_library[module_name] = module_class
+    
+    def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
+        self.module_type = None
+        self.input_data = input_data
 
     def publish_resource(self, resource: dict):
         for module in self.owner.modules:
@@ -112,16 +133,40 @@ class Module:
 
     def update(self):
         raise NotImplementedError
+    
+    def reset(self):
+        raise NotImplementedError
+    
+    def initialize(self):
+        pass
         
 
 class ComputeTool:
-    raise NotImplementedError
+    """
+    This is the base class for compute tools. These are the compute-heavy functions,
+    which have implementations of numerical methods which can be shared between modules.
+    """
+    def __init__(self, owner: Simulation):
+        self.owner = owner
+        raise NotImplementedError
 
 
 class SimulationClock:
-    raise NotImplementedError
+    def __init__(self, owner: Simulation):
+        self.owner = owner
+        raise NotImplementedError
 
 
 class Diagnostic:
-    raise NotImplementedError
+    def __init__(self, owner: Simulation):
+        self.owner = owner
+        raise NotImplementedError
 
+    def diagnose(self):
+        raise NotImplementedError
+
+
+class Grid:
+    def __init__(self, grid_data: dict):
+        self.grid_data = grid_data
+        
