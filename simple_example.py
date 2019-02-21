@@ -26,7 +26,7 @@ sim_config = {"Modules": [
          "param": 22,
          },         
     ],
-    "Grid": {},
+    "Grid": {"N": 8},
     "Clock": {"start_time": 0,
               "end_time": 3}
     }
