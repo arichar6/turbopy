@@ -12,17 +12,17 @@ from shutil import rmtree
 from setuptools import find_packages, setup, Command
 
 # Package meta-data.
-NAME = 'mypackage'
-DESCRIPTION = 'My short description for my project.'
+NAME = 'turbopy'
+DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, Module, Tool" class hierarchy.'
 URL = 'https://github.com/me/myproject'
-EMAIL = 'me@example.com'
-AUTHOR = 'Awesome Soul'
+EMAIL = 'steve.richardson@nrl.navy.mil'
+AUTHOR = 'Steve Richardson'
 REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    # 'requests', 'maya', 'records',
+    'numpy', 
 ]
 
 # What packages are optional?

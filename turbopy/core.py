@@ -89,15 +89,13 @@ class Simulation:
     
     def read_modules_from_input(self):
         for module_data in self.input_data["Modules"]:
-            module_name = module_data["name"]
-            try:
-                module_class = Module.module_library[module_name]
-            except KeyError:
-                raise KeyError("Module {0} not found in module library".format(module_name))
+            module_class = Module.lookup_name(module_data["name"])
             self.modules.append(module_class(owner=self, input_data=module_data))
     
     def read_diagnostics_from_input(self):
-        pass
+        for d in self.input_data["Diagnostics"]:
+            diagnostic_class = Diagnostic.lookup_name(d["type"])
+            self.diagnostics.append(diagnostic_class(owner=self, input_data=d))
     
     def sort_modules(self):
         pass
@@ -118,8 +116,15 @@ class Module:
     @classmethod
     def add_module_to_library(cls, module_name, module_class):
         if module_name in cls.module_library:
-            raise ValueError("Module {0} already in module library".format(module_name))
+            raise ValueError("Module '{0}' already in module library".format(module_name))
         cls.module_library[module_name] = module_class
+    
+    @classmethod
+    def lookup_name(cls, module_name):
+        try:
+            return cls.module_library[module_name]
+        except KeyError:
+            raise KeyError("Module '{0}' not found in module library".format(module_name))
     
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
@@ -129,13 +134,21 @@ class Module:
     def publish_resource(self, resource: dict):
         for module in self.owner.modules:
             module.inspect_resource(resource)
+        for diagnostic in self.owner.diagnostics:
+            diagnostic.inspect_resource(resource)
 
     def inspect_resource(self, resource: dict):
-        """If your subclass needs the data described by the key, now's their chance to save a pointer to the data"""
+        """
+        If your subclass needs the data described by the key, now's their chance to 
+        save a pointer to the data
+        """
         pass
 
     def exchange_resources(self):
-        """This is the function where you call publish_resource, to tell other modules about data you want to share"""
+        """
+        This is the function where you call publish_resource, to tell other modules 
+        about data you want to share
+        """
         pass
 
     def update(self):
@@ -161,30 +174,93 @@ class ComputeTool:
 class SimulationClock:
     def __init__(self, owner: Simulation, clock_data: dict):
         self.owner = owner
-        self.time = clock_data["start_time"]
+        self.start_time = clock_data["start_time"]
+        self.time = self.start_time
         self.end_time = clock_data["end_time"]
-    
+        self.this_step = 0
+        self.num_steps = clock_data["num_steps"]
+        self.dt = ((clock_data["end_time"] - clock_data["start_time"]) /
+                        clock_data["num_steps"])
+        
     def advance(self):
-        self.time = self.time + 1
+        self.this_step += 1
+        self.time = self.start_time + self.dt * self.this_step
     
     def is_running(self):
-        return self.time <= self.end_time
-    
+        return self.this_step <= self.num_steps
+
 
 class Diagnostic:
-    def __init__(self, owner: Simulation):
-        self.owner = owner
-        raise NotImplementedError
+    diagnostic_library = {}
+    
+    @classmethod
+    def add_diagnostic_to_library(cls, diagnostic_name, diagnostic_class):
+        if diagnostic_name in cls.diagnostic_library:
+            raise ValueError("Diagnositc '{0}' already in diagnositc library".format(diagnostic_name))
+        cls.diagnostic_library[diagnostic_name] = diagnostic_class
 
+    @classmethod
+    def lookup_name(cls, diagnostic_name):
+        try:
+            return cls.diagnostic_library[diagnostic_name]
+        except KeyError:
+            raise KeyError("Diagnositc '{0}' not found in diagnositc library".format(diagnostic_name))
+            
+    def __init__(self, owner: Simulation, input_data: dict):
+        self.owner = owner
+        self.input_data = input_data
+
+    def inspect_resource(self, resource: dict):
+        pass
+        
     def diagnose(self):
         raise NotImplementedError
+    
+    def initialize(self):
+        pass
+    
+    def finalize(self):
+        pass
+
+
+class PointDiagnostic(Diagnostic):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.location = input_data["location"]
+        self.field_name = input_data["field"]
+        self.output = input_data["output"] # "stdout"
+        self.idx = 0
+        self.field = None
+        
+    def diagnose(self):
+        self.output_function(self.field[self.idx])
+
+    def inspect_resource(self, resource):
+        if self.field_name in resource:
+            self.field = resource[self.field_name]
+    
+    def initialize(self):
+        # check that point is within grid
+        # set idx to the closest index point
+        
+        # setup output method
+        self.output_function = print
+
+
+Diagnostic.add_diagnostic_to_library("point", PointDiagnostic)
 
 
 class Grid:
     def __init__(self, grid_data: dict):
         self.grid_data = grid_data
         self.num_points = grid_data["N"]
+        self.r_min = grid_data["r_min"]
+        self.r_max = grid_data["r_max"]
+        self.r = self.r_min + self.r_max * self.generate_linear()
     
-    def field_factory(self, num_components=1):
+    def generate_field(self, num_components=1):
         return np.zeros((self.num_points, num_components))
+    
+    def generate_linear(self):
+        return np.linspace(0, 1, self.num_points)
         
