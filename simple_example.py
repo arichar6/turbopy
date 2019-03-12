@@ -32,5 +32,4 @@ sim_config = {"Modules": [
     }
     
 sim = Simulation(sim_config)
-# sim.prepare_simulation()
 sim.run()

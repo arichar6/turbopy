@@ -8,9 +8,18 @@ class FieldModel(Module):
     """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.E = owner.grid.generate_field(3)
-        self.B = owner.grid.generate_field(3)
+        self.mu0 = 4 * np.pi * 1e-7
+        self.E = owner.grid.generate_field(1)
+        self.B = owner.grid.generate_field(1)
         self.currents = []
+        self.solver_name = input_data["solver"]
+        self.solver = None
+        
+        self.sourceterm = owner.grid.generate_field(1)
+        self.old_source = owner.grid.generate_field(1)
+
+    def initialize(self):
+        self.solver = self.owner.find_tool_by_name(self.solver_name)
 
     def inspect_resource(self, resource):
         """This modules needs to keep track of current sources"""
@@ -27,7 +36,11 @@ class FieldModel(Module):
         self.publish_resource({"FieldModel:B": self.B})
 
     def update(self):
-        self.E[0,0] = self.owner.clock.time
+        self.old_source[:] = self.sourceterm[:]
+        self.sourceterm[:] = np.sum(self.currents, axis=0)
+        dt = self.owner.clock.dt
+        dJ = (self.sourceterm - self.old_source)/dt
+        self.E[:,0] = self.solver.solve( self.mu0 * dJ[:,0] )
 
 
 class PlasmaResponseModel(Module):
@@ -185,7 +198,7 @@ class RigidBeamCurrentSource(Module):
         profiles = {"gaussian": lambda r: 
                         self.peak_current * np.exp(-(r/self.beam_radius)**2),
                     "uniform": lambda r:
-                        self.peak_current,
+                        self.peak_current * (r < self.beam_radius),
                     "bennett": lambda r:
                         self.peak_current * 1.0/(1.0+(r/self.beam_radius)**2)**2,
                     }
@@ -226,28 +239,44 @@ sim_config = {"Modules": [
         "initial_conditions":initial_conditions
          },
         {"name": "RigidBeamCurrentSource",
-         "peak_current": 1.0e5,
-         "beam_radius": 0.01,
-         "rise_time": 30.0e-9,
-         "profile": "gaussian",
+             "peak_current": 1.0e5,
+             "beam_radius": 0.05,
+             "rise_time": 30.0e-9,
+             "profile": "uniform",
+         },
+        {"name": "FieldModel",
+             "solver": "PoissonSolver1DRadial",
          },
     ],
     "Diagnostics": [
-        {"type": "point",
-         "location": 0.005,
-         "field": "FieldModel:E",
-         "output": "stdout",
-         }
+        {"type": "field",
+             "field": "FieldModel:E",
+             "output": "csv",
+             "filename": "efield.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "CurrentSource:J",
+             "output": "csv",
+             "filename": "currentsource.csv",
+             "component": 0,
+         },
+         {"type": "grid"},
     ],
+    "Tools": [
+        {"type": "PoissonSolver1DRadial",
+         }],
     "Grid": {"N":N_grid ,
              "r_min": 0, "r_max": 0.1,
             },
     "Clock": {"start_time": 0,
               "end_time":  end_time, 
               "num_steps": number_of_steps,
+
               }
     }
     
 sim = Simulation(sim_config)
-# sim.prepare_simulation()
 sim.run()
+
+
