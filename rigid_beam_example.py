@@ -98,12 +98,13 @@ class ThermalFluidPlasma(Module):
         path_to_rates = input_data["RateFileList"] 
         initial_conditions= input_data["initial_conditions"]
         self.chem = Chem.Chemistry(path_to_rates) 
-        species = self.chem.species
+        self.species = self.chem.species
 #  Set the initial conditions on the plasma fluid
-        self.set_initial_plasma_quantities(species,initial_conditions, owner)
+        self.set_initial_plasma_quantities(initial_conditions, owner)
+        self.rhs = self.chem.RHS(self.species)
         self.update = self.forward_Euler
 
-    def set_initial_plasma_quantities(self, species, initial_conditions, owner):
+    def set_initial_plasma_quantities(self, initial_conditions, owner):
         """
         This function determines the shape and size of the grid and sets the 
         initial conditions for each specties accordingly. 
@@ -116,7 +117,6 @@ class ThermalFluidPlasma(Module):
         velocity = initial_conditions['velocity']
         erg = initial_conditions['erg']
         initial_species = erg.keys()
-        self.species = species
         
         for species_name in self.species.keys():
             if species_name in initial_species:
@@ -133,20 +133,20 @@ class ThermalFluidPlasma(Module):
                 self.species[species_name].energy   = owner.grid.generate_field(1)
         return 
 
-    def update_fluid_quantities(self):
+    def predictor_corrector(self):
         """
         This function performs a predictor-corrector for updating the densities,
         the electron velocity and energy
         """
         dt = self.owner.clock.dt
 #  This is the predictor step
-        sp_predictor = self.predictor_corrector(self.species, 0.5*dt)
+        sp_predictor = self.integrator(self.species, 0.5*dt)
 #  This is the corrector step
-        self.species = self.predictor_corrector(sp_predictor, dt)
+        self.species = self.integrator(sp_predictor, dt)
 
         return
         
-    def predictor_corrector(self, species, dt):
+    def integrator(self, species, dt):
         sp_copy = species.copy()
         rhs = self.chem.RHS(sp_copy)
         for s in species.keys():
@@ -158,20 +158,34 @@ class ThermalFluidPlasma(Module):
     def forward_Euler(self):
         dt = self.owner.clock.dt
         
+        Jp = 0.0
         rhs = self.chem.RHS(self.species)
+        self.rhs = rhs
         for sp in self.species.keys():
-            self.species[sp].density  = self.species[sp].density + rhs['density'][sp]*dt
+            self.species[sp].density[:]  = self.species[sp].density + rhs['density'][sp]*dt
             M = self.AMU*self.species[sp].A
             q = self.echarge*self.species[sp].Z
 #            F = self.species[sp].q*(E+self.cross_product(self.species[sp],B))
             F = q*self.E
             nu_m = rhs['nu_m'][sp]
-            self.species[sp].velocity = self.species[sp].velocity + (F/M - nu_m*self.species[sp].velocity)*dt
-            self.species[sp].energy = self.species[sp].energy + (np.dot(self.species[sp].velocity,self.E)-rhs['energy'][sp])*dt
-            
+            VDrift = F/(M*nu_m)
+#            self.species[sp].velocity[:]=VDrift
+            self.species[sp].velocity[:] = self.species[sp].velocity + (F/M - nu_m*self.species[sp].velocity)*dt
+#            self.species[sp].energy = self.species[sp].energy + (np.dot(self.species[sp].velocity,self.E)-rhs['energy'][sp])*dt
+            self.species[sp].energy[:] = self.species[sp].energy + (self.species[sp].velocity*self.E+rhs['energy'][sp])*dt
+            Jp = Jp + q*self.species[sp].density*self.species[sp].velocity
+        self.J[:] = Jp
+        return
 
     def exchange_resources(self):
         self.publish_resource({"ResponseModel:J": self.J})
+        self.publish_resource({"ElectronEnergy": self.species['e'].energy})
+        self.publish_resource({"ElectronVelocity": self.species['e'].velocity})
+        self.publish_resource({"ElectronDensity": self.species['e'].density})
+        self.publish_resource({"GasDensity": self.species['N2(X1)'].density})
+        self.publish_resource({"MomentumTransfer": self.rhs['nu_m']['e']})
+        
+        
 
     def inspect_resource(self, resource):
         if "FieldModel:E" in resource:
@@ -233,6 +247,7 @@ N_grid = 8
 
 sim_config = {"Modules": [
         {"name": "FieldModel",
+             "solver": "PoissonSolver1DRadial",
          },
         {"name": "ThermalFluidPlasma",
         "RateFileList":RateFileList,
@@ -244,24 +259,57 @@ sim_config = {"Modules": [
              "rise_time": 30.0e-9,
              "profile": "uniform",
          },
-        {"name": "FieldModel",
-             "solver": "PoissonSolver1DRadial",
-         },
     ],
     "Diagnostics": [
         {"type": "field",
              "field": "FieldModel:E",
              "output": "csv",
-             "filename": "efield.csv",
+             "filename": "Efield.csv",
              "component": 0,
          },
         {"type": "field",
              "field": "CurrentSource:J",
              "output": "csv",
-             "filename": "currentsource.csv",
+             "filename": "BeamCurrent.csv",
              "component": 0,
          },
-         {"type": "grid"},
+        {"type": "field",
+             "field": "ResponseModel:J",
+             "output": "csv",
+             "filename": "PlasmaCurrent.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "ElectronEnergy",
+             "output": "csv",
+             "filename": "ElectronEnergy.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "ElectronVelocity",
+             "output": "csv",
+             "filename": "ElectronVelocity.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "ElectronDensity",
+             "output": "csv",
+             "filename": "ElectronDensity.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "GasDensity",
+             "output": "csv",
+             "filename": "GasDensity.csv",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "MomentumTransfer",
+             "output": "csv",
+             "filename": "nuM.csv",
+             "component": 0,
+         },
+            {"type": "grid"},
     ],
     "Tools": [
         {"type": "PoissonSolver1DRadial",
@@ -277,6 +325,5 @@ sim_config = {"Modules": [
     }
     
 sim = Simulation(sim_config)
+#
 sim.run()
-
-
