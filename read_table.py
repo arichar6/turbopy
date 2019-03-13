@@ -1,38 +1,6 @@
 from pprint import pprint
 import numpy as np
 
-fname = 'chemistry/N2_Rates_TT.txt'
-
-def read_section(fp):
-    separator, section = None, []
-    for line in fp:
-        line = line.rstrip()
-        if line.startswith("-----"):
-            if separator: yield section
-            separator, section = line, []
-        else:
-            section.append(line)
-    if section: yield section
-
-def read_reaction(sections):
-    header, data = None, None
-    j = 0
-    for s in sections:
-        if j % 2:
-            data = s
-            yield(header, data)
-        else:
-            header = s
-        j = j + 1
-
-def parse_header_to_dict(header):
-    header_data = {}
-    for line in header:
-        if not line.startswith('#'):
-            line_data = [item.strip() for item in line.split(':', 1)]
-            header_data[line_data[0]] = line_data[1]
-    return header_data
-
 
 class Species:
     def __init__(self, mass, charge, name):
@@ -73,6 +41,39 @@ class Reaction:
         for m, q, name in zip(mass_p, charge_p, name_p):
             self.products.append(Species(float(m), float(q), name))
 
+
+def read_section(fp):
+    separator, section = None, []
+    for line in fp:
+        line = line.rstrip()
+        if line.startswith("-----"):
+            if separator: yield section
+            separator, section = line, []
+        else:
+            section.append(line)
+    if section: yield section
+
+def read_reaction(sections):
+    header, data = None, None
+    j = 0
+    for s in sections:
+        if j % 2:
+            data = s
+            yield(header, data)
+        else:
+            header = s
+        j = j + 1
+
+def parse_header_to_dict(header):
+    header_data = {}
+    for line in header:
+        if not line.startswith('#'):
+            line_data = [item.strip() for item in line.split(':', 1)]
+            header_data[line_data[0]] = line_data[1]
+    return header_data
+
+# Open and parse a rates table as an example of how this code works
+fname = 'chemistry/N2_Rates_TT.txt'
 
 with open(fname) as f:
     for h, d in read_reaction(read_section(f)):
