@@ -1,4 +1,3 @@
-from pprint import pprint
 import numpy as np
 
 
@@ -12,6 +11,14 @@ class Species:
         return '(' + ', '.join(["Species: " + self.name,
                           "Mass: " + str(self.mass),
                           "Charge: " + str(self.charge)]) + ')'
+    
+    def __eq__(self, other):
+        if self.name == other.name:
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(self.name)
 
 
 class Reaction:
@@ -20,7 +27,7 @@ class Reaction:
         self.reactants = []
         self.products = []
         self.type = header['Type']
-        self.delta_e = header['Delta(eV)']
+        self.delta_e = float(header['Delta(eV)'])
         self.identifier = header['Reaction']
         self.interpret_reaction(header)
     
@@ -41,6 +48,14 @@ class Reaction:
         for m, q, name in zip(mass_p, charge_p, name_p):
             self.products.append(Species(float(m), float(q), name))
 
+    def __eq__(self, other):
+        if self.identifier == other.identifier:
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(self.identifier)
+        
 
 def read_section(fp):
     separator, section = None, []
@@ -48,7 +63,8 @@ def read_section(fp):
         line = line.rstrip()
         if line.startswith("-----"):
             if separator: yield section
-            separator, section = line, []
+            separator = line
+            section = []
         else:
             section.append(line)
     if section: yield section
@@ -72,12 +88,16 @@ def parse_header_to_dict(header):
             header_data[line_data[0]] = line_data[1]
     return header_data
 
-# Open and parse a rates table as an example of how this code works
-fname = 'chemistry/N2_Rates_TT.txt'
+def parse_rate_file(fname):
+    reactions = []
+    with open(fname,'r') as f:
+        for h, d in read_reaction(read_section(f)):
+            h = parse_header_to_dict(h)
+            r = Reaction(h, d)
+            reactions.append(r)
+    return reactions
 
-with open(fname) as f:
-    for h, d in read_reaction(read_section(f)):
-        h = parse_header_to_dict(h)
-        r = Reaction(h, d)
-        print(r)
-        print(r.reactants, '->', r.products)
+
+
+
+
