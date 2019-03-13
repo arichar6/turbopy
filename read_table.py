@@ -39,6 +39,11 @@ class Species:
         self.name = name
         self.mass = mass
         self.charge = charge
+    
+    def __repr__(self):
+        return '(' + ', '.join(["Species: " + self.name,
+                          "Mass: " + str(self.mass),
+                          "Charge: " + str(self.charge)]) + ')'
 
 
 class Reaction:
@@ -51,22 +56,22 @@ class Reaction:
         self.identifier = header['Reaction']
         self.interpret_reaction(header)
     
-    def __str__(self):
-        return "Reaction: " + self.identifier
+    def __repr__(self):
+        return self.type + " Reaction: " + self.identifier
 
     def parse_table(self, data):
         return np.loadtxt(data, skiprows=1)
     
     def interpret_reaction(self, header):
-        [mass_r, mass_p] = [m.split(':') for m in header['Mass(AMU)'].split('->')]
-        [charge_r, charge_p] = [q.split(':') for q in header['Charge'].split('->')]
-        [name_r, name_p] = [n.split(':') for n in header['Reaction'].split('->')]
+        [mass_r, mass_p] = [m.strip('()').split(':') for m in header['Mass(AMU)'].split('->')]
+        [charge_r, charge_p] = [q.strip('()').split(':') for q in header['Charge'].split('->')]
+        [name_r, name_p] = [n.split('+') for n in header['Reaction'].split('->')]
         
         for m, q, name in zip(mass_r, charge_r, name_r):
-            self.reactants.append(Species(m, q, name))
+            self.reactants.append(Species(float(m), float(q), name))
 
         for m, q, name in zip(mass_p, charge_p, name_p):
-            self.products.append(Species(m, q, name))
+            self.products.append(Species(float(m), float(q), name))
 
 
 with open(fname) as f:
@@ -74,6 +79,4 @@ with open(fname) as f:
         h = parse_header_to_dict(h)
         r = Reaction(h, d)
         print(r)
-        print("First <=10 data rows:")
-        print(r.data[:10])
-
+        print(r.reactants, '->', r.products)
