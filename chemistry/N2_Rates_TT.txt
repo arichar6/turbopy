@@ -1,6 +1,6 @@
 ----------------------------------------
 Reaction: e+N2(X1)->e+N2(X1)
-Type: Ground/MomXfer   
+Type: MomXfer   
 Delta(eV): 0.00  
 Mass(AMU): (5.4858E-4:28.0134)->(5.4858E-4:28.0134)
 Charge: (-1:0)->(-1:0)     
