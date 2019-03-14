@@ -2,10 +2,8 @@ from turbopy import Simulation, Module
 import numpy as np
 import chemistry as Chem
 
+
 class FieldModel(Module):
-    """
-    This is the abstract base class for field models
-    """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.mu0 = 4 * np.pi * 1e-7
@@ -43,6 +41,19 @@ class FieldModel(Module):
         self.E[:,0] = self.solver.solve( self.mu0 * dJ[:,0] )
 
 
+class ConstantFieldModel(Module):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+    
+        self.E = input_data["field_value"] + owner.grid.generate_field(1)
+
+    def exchange_resources(self):
+        self.publish_resource({"FieldModel:E": self.E})
+
+    def update(self):
+        pass
+        
+
 class PlasmaResponseModel(Module):
     """
     This is the abstract base class for plasma response models
@@ -53,8 +64,6 @@ class PlasmaResponseModel(Module):
         self.E = None
         
         self.update = self.forward_integrate
-        
-        
 
     def exchange_resources(self):
         self.publish_resource({"ResponseModel:J": self.J})
@@ -64,9 +73,10 @@ class PlasmaResponseModel(Module):
             print("adding E-field resource")
             self.E = resource["FieldModel:E"]
 
-    def forward_integrate():
+    def forward_integrate(self):
         pass
-#        
+
+
 class ThermalFluidPlasma(Module):
     """
     This class handles the themal plasma (fluid-like) response that is used to 
@@ -81,30 +91,32 @@ class ThermalFluidPlasma(Module):
         super().__init__(owner, input_data)
         self.J = owner.grid.generate_field(1)  # only Jz for now
         self.E = None
-#        
-# We need to setup the chemistry and establish the initial conditions in the plasma
-# fluid.  
-#
-#  Establish an instance to the Chemistry class and define some constants
-#
+        #        
+        # We need to setup the chemistry and establish the initial conditions in the plasma
+        # fluid.  
+        #
+        #  Establish an instance to the Chemistry class and define some constants
+        #
         self.echarge = 1.602E-19                     # magnitude of the electron charge in Coulombs
         self.AMU     = 1.67377E-27                   # mass of 1 Atomic Mass Unit in kg
-#
-#  The call to plasma_chemistry(list_of_rate_files) reads the establishes the plasma chemistry data structure 
-#  and establishes a unique set of species for all of the reactions listed in the rate-equation file(s).  It also 
-#  sets up a dictionary which tells the class which species are products and which are reactants for
-#  each reaction in the file.
-#
-        path_to_rates = input_data["RateFileList"] 
-        initial_conditions= input_data["initial_conditions"]
-        self.chem = Chem.Chemistry(path_to_rates) 
-        self.species = self.chem.species
-#  Set the initial conditions on the plasma fluid
-        self.set_initial_plasma_quantities(initial_conditions, owner)
-        self.rhs = self.chem.RHS(self.species)
-        self.update = self.forward_Euler
 
-    def set_initial_plasma_quantities(self, initial_conditions, owner):
+        self.path_to_rates = input_data["RateFileList"]
+        self.initial_conditions = input_data["initial_conditions"]
+        #
+        #  The call to plasma_chemistry(list_of_rate_files) reads the establishes the plasma chemistry data structure 
+        #  and establishes a unique set of species for all of the reactions listed in the rate-equation file(s).  It also 
+        #  sets up a dictionary which tells the class which species are products and which are reactants for
+        #  each reaction in the file.
+        #
+
+        self.chem = Chem.Chemistry(self.path_to_rates)
+        self.species = self.chem.create_species()
+        self.update = self.forward_Euler
+        
+    def initialize(self):
+        self.set_initial_plasma_quantities()
+            
+    def set_initial_plasma_quantities(self):
         """
         This function determines the shape and size of the grid and sets the 
         initial conditions for each specties accordingly. 
@@ -112,10 +124,10 @@ class ThermalFluidPlasma(Module):
         initial_conditions   - a dictionary of species that have non-zero partial pressures at t=0
         
         """
-        NLoschmidt = 2.686E25                        # This is the number of molecules in an ideal gas at stp
-        pressure = initial_conditions['pressure']
-        velocity = initial_conditions['velocity']
-        erg = initial_conditions['erg']
+        NLoschmidt = 2.686E25        # This is the number of molecules in an ideal gas at stp
+        pressure = self.initial_conditions['pressure']
+        velocity = self.initial_conditions['velocity']
+        erg = self.initial_conditions['energy']
         initial_species = erg.keys()
         
         for species_name in self.species.keys():
@@ -123,14 +135,14 @@ class ThermalFluidPlasma(Module):
                 density = NLoschmidt*pressure[species_name]
                 V = velocity[species_name]
                 energy = erg[species_name]
-                self.species[species_name].density  = density  * (1 + owner.grid.generate_field(1))
-                self.species[species_name].velocity = V * (1 + owner.grid.generate_field(1))
-                self.species[species_name].energy   = energy * (1 + owner.grid.generate_field(1))
+                self.species[species_name].density  = density  * (1 + self.owner.grid.generate_field(1))
+                self.species[species_name].velocity = V * (1 + self.owner.grid.generate_field(1))
+                self.species[species_name].energy   = energy * (1 + self.owner.grid.generate_field(1))
                 print ( '    initial conditions have been set for species', species_name )
             else:
-                self.species[species_name].density  = owner.grid.generate_field(1)
-                self.species[species_name].velocity = owner.grid.generate_field(1)
-                self.species[species_name].energy   = owner.grid.generate_field(1)
+                self.species[species_name].density  = self.owner.grid.generate_field(1)
+                self.species[species_name].velocity = self.owner.grid.generate_field(1)
+                self.species[species_name].energy   = self.owner.grid.generate_field(1)
         return 
 
     def predictor_corrector(self):
@@ -227,38 +239,40 @@ class RigidBeamCurrentSource(Module):
     def set_current_for_time(self, time):
         self.J[:] = np.sin(np.pi*time/self.rise_time/2)**2 * self.profile        
 
+
 Module.add_module_to_library("FieldModel", FieldModel)
+Module.add_module_to_library("ConstantFieldModel", ConstantFieldModel)
 Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
 Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
 ##
 #  Chemistry files
-RateFileList=['N:\\Codes\\turbopy\\chemistry\\N2_Rates_TT.txt']
+RateFileList=['chemistry/N2_Rates_TT.txt']
 # Initial Conditions:
 #       All species that do not have a non-zero partial pressure at t=0 will be set to zero
 #
 initial_conditions={"pressure":{"N2(X1)":1.0/760,"e":1e-5*1.0/760},
                     "velocity":{"N2(X1)":0.0,    "e":0.0},
-                    "erg":{     "N2(X1)":1.0/40.,"e":0.1}  }
+                    "energy":{     "N2(X1)":1.0/40.,"e":0.1}  }
                     
 end_time = 30.E-9
 dt = 1.0E-9
 number_of_steps = int(end_time/dt)
-N_grid = 8
+N_grid = 3
 
 sim_config = {"Modules": [
-        {"name": "FieldModel",
-             "solver": "PoissonSolver1DRadial",
+        {"name": "ConstantFieldModel",
+             "field_value": 1e4,
          },
         {"name": "ThermalFluidPlasma",
         "RateFileList":RateFileList,
         "initial_conditions":initial_conditions
          },
-        {"name": "RigidBeamCurrentSource",
-             "peak_current": 1.0e5,
-             "beam_radius": 0.05,
-             "rise_time": 30.0e-9,
-             "profile": "uniform",
-         },
+#         {"name": "RigidBeamCurrentSource",
+#              "peak_current": 1.0e5,
+#              "beam_radius": 0.05,
+#              "rise_time": 30.0e-9,
+#              "profile": "uniform",
+#          },
     ],
     "Diagnostics": [
         {"type": "field",
@@ -267,48 +281,48 @@ sim_config = {"Modules": [
              "filename": "Efield.csv",
              "component": 0,
          },
-        {"type": "field",
-             "field": "CurrentSource:J",
-             "output": "csv",
-             "filename": "BeamCurrent.csv",
-             "component": 0,
-         },
+#         {"type": "field",
+#              "field": "CurrentSource:J",
+#              "output": "csv",
+#              "filename": "BeamCurrent.csv",
+#              "component": 0,
+#          },
         {"type": "field",
              "field": "ResponseModel:J",
              "output": "csv",
              "filename": "PlasmaCurrent.csv",
              "component": 0,
          },
-        {"type": "field",
-             "field": "ElectronEnergy",
-             "output": "csv",
-             "filename": "ElectronEnergy.csv",
-             "component": 0,
-         },
-        {"type": "field",
-             "field": "ElectronVelocity",
-             "output": "csv",
-             "filename": "ElectronVelocity.csv",
-             "component": 0,
-         },
+#         {"type": "field",
+#              "field": "ElectronEnergy",
+#              "output": "csv",
+#              "filename": "ElectronEnergy.csv",
+#              "component": 0,
+#          },
+#         {"type": "field",
+#              "field": "ElectronVelocity",
+#              "output": "csv",
+#              "filename": "ElectronVelocity.csv",
+#              "component": 0,
+#          },
         {"type": "field",
              "field": "ElectronDensity",
              "output": "csv",
              "filename": "ElectronDensity.csv",
              "component": 0,
          },
-        {"type": "field",
-             "field": "GasDensity",
-             "output": "csv",
-             "filename": "GasDensity.csv",
-             "component": 0,
-         },
-        {"type": "field",
-             "field": "MomentumTransfer",
-             "output": "csv",
-             "filename": "nuM.csv",
-             "component": 0,
-         },
+#         {"type": "field",
+#              "field": "GasDensity",
+#              "output": "csv",
+#              "filename": "GasDensity.csv",
+#              "component": 0,
+#          },
+#         {"type": "field",
+#              "field": "MomentumTransfer",
+#              "output": "csv",
+#              "filename": "nuM.csv",
+#              "component": 0,
+#          },
             {"type": "grid"},
     ],
     "Tools": [

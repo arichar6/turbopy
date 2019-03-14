@@ -38,9 +38,29 @@ class Reactions:
         
         return
 
-class Species:
+
+class Reaction:
     def __init__(self):
-        self.species_name = ' '
+#         self.reactants = []
+#         self.products = []
+#         self.type = ' '
+#         self.energy = 0.0
+#         self.rate_coeff = 0.0
+#         self.LOG10_k = 0.0
+#         self.Z = 1.0
+#         self.A = 1.0
+#         self.deltaE = 0.0
+#         self.rx_rate   = None
+#         self.mom_rate = None
+#         self.erg_rate = None
+#         
+#         return
+        pass
+
+class FluidSpecies:
+    def __init__(self, owner, species, ic, immobile=True):
+        self.species = species
+        self.owner = owner
         self.density = None
         self.velocity = None
         self.energy = None
@@ -48,13 +68,26 @@ class Species:
         self.A = 1
         self.Z = 1
         self.index = 0
-        return
-                
+        
+        self.set_conditions(ic)        
+    
+    def set_conditions(ic):
+        self.density = ic.density * self.owner.grid.generate_ones_centered_field(1)
+        if not self.immobile:
+            self.velocity = ic.velocity * self.owner.grid.generate_ones_centered_field(1)
+
+
+
 class Chemistry:
 
     def __init__(self, RateFileList):
         self.tiny = np.finfo(1.0).tiny
-        self.plasma_chemistry(RateFileList)
+        self.rate_files = RateFileList
+        
+        self.parse_files(self.rate_files)
+        
+    def create_species(self):
+        pass
         
     def plasma_chemistry(self,fname_list):
         """
@@ -130,8 +163,7 @@ class Chemistry:
         k = 10.0**chem[reaction].LOG10_k(x)
         return k
         
-        
-    def RHS(self,species):
+    def RHS(self, species):
         """
         This function computes the source and sink terms for the plasma chemistry
         """
@@ -147,7 +179,7 @@ class Chemistry:
             dedt[sp] = 0.0
         mom_rate = 0.0
         for reaction in reactions:
-            k = 1E-6*self.get_coefficient( reaction, electron_energy ) 
+            k = 1E-6 * self.get_coefficient(reaction, electron_energy)
             threshold_energy = chem[reaction].deltaE
             reacting_species = chem[reaction].reactants
             n1 = reacting_species[0].density
@@ -158,7 +190,7 @@ class Chemistry:
                 mom_rate = mom_rate + reaction_rate
             for RX in reacting_species:
                 dndt[RX.species_name] = dndt[RX.species_name] - reaction_rate
-                if  RX.species_name=='e':
+                if  RX.species_name == 'e':
                     dedt['e'] = dedt['e'] - reaction_rate*threshold_energy
 
             products = chem[reaction].products
@@ -167,13 +199,12 @@ class Chemistry:
         dedt['e'] = dedt['e']/species['e'].density
         nu_m['e'] = mom_rate/species['e'].density
         rhs = {}
-        rhs['density']=dndt
-        rhs['nu_m']= nu_m
-        rhs['energy']=dedt
+        rhs['density'] = dndt
+        rhs['nu_m'] = nu_m
+        rhs['energy'] = dedt
         return rhs
 
-
-    def RHS1(self,species):
+    def RHS1(self, species):
         """
         This function computes the source and sink terms for the plasma chemistry
         """
@@ -228,7 +259,7 @@ class Chemistry:
         Z = []
         rate_coeff = []
         energy = []
-        RX = Reactions()
+        RX = 
         nlines = len(a)
         
         for iline in range(nlines):
@@ -259,6 +290,8 @@ class Chemistry:
                         iline = iline + 1
                     rate_coeff.append(data)
                     energy.append(erg)
+            
+            
         RX.reactions = reactions
         RX.types = types
         RX.deltaE = np.array(deltaE)
@@ -268,6 +301,8 @@ class Chemistry:
         RX.energy = np.array(energy)
         RX.reactants = self.getReactants(reactions)
         RX.products = self.getProducts(reactions)
+
+        
         return RX
         
     def getReactants(self,reactions):
@@ -310,7 +345,7 @@ class Chemistry:
         ntotal = len( keys )
         for n in range(ntotal):
             key = keys[n]
-            attributes= Species()
+            attributes = Species()
             attributes.type = type[n]
             attributes.A  = A[n]
             attributes.Z  = Z[n]
@@ -391,13 +426,14 @@ class Chemistry:
                     A.append(np.array(aa)[i][0])
                     species.append(item)
                     type.append(chem[key].type)
-        for key in chem.keys():
+
             for item in chem[key].reactants:
                 count = species.count(item)
                 if count==0:
                     Z.append(chem[key].Z[chem[key].reactants==item])
                     species.append(item)
                     type.append(chem[key].type)
+
         type[species=='e'] = 'Electron'
         species = np.array(species)
         Z = np.array(Z)
