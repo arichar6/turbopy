@@ -70,14 +70,17 @@ class ParticlePusher(Module):
     
     def boris_push(self):
         dt = self.owner.clock.dt
+        c2 = (2.9979e8)**2
         for p in self.particles:
-            vminus = p.momentum / p.mass + dt * self.E * p.charge / p.mass / 2
-            t = dt * self.B * p.charge / p.mass / 2
-            vprime = vminus + np.cross(vminus, t)
+            vminus = p.momentum + dt * self.E * p.charge / 2
+            m1 = np.sqrt(p.mass**2 + np.dot(p.momentum, p.momentum)/c2)
+            t = dt * self.B * p.charge / m1 / 2
             s = 2 * t / (1 + np.dot(t, t))
+            vprime = vminus + np.cross(vminus, t)
             vplus = vminus + np.cross(vprime, s)
-            p.momentum = vplus * p.mass + dt * self.E * p.charge / 2
-            p.position = p.position + dt * p.momentum / p.mass
+            p.momentum = vplus + dt * self.E * p.charge / 2
+            m2 = np.sqrt(p.mass**2 + np.dot(p.momentum, p.momentum)/c2)
+            p.position = p.position + dt * p.momentum / m2
                 
         
 Module.add_module_to_library("ConstantFieldModel", ConstantFieldModel)
@@ -130,12 +133,12 @@ Diagnostic.add_diagnostic_to_library("particle", ParticleDiagnostic)
 
 sim_config = {"Modules": [
         {"name": "ConstantFieldModel",
-            "E0": 1e4,
-            "B0": 1,
+            "E0": -1e5,
+            "B0": -1,
         },
         {"name": "ParticlePusher",
             "num_particles": 1,
-            "p0": 9.1094e-31 * np.array([0.01/1e-6, 0, 0])
+            "p0": 9.1094e-31 * np.array([1e6, 0, 0])
         },
     ],
     "Diagnostics": [
