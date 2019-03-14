@@ -90,7 +90,7 @@ class ThermalFluidPlasma(Module):
         """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.J = owner.grid.generate_field(1)  # only Jz for now
+        self.J = self.owner.grid.generate_field(1)  # only Jz for now
         self.E = None
 #        
 # We need to setup the chemistry and establish the initial conditions in the plasma
@@ -98,22 +98,22 @@ class ThermalFluidPlasma(Module):
 #
 #  Establish an instance to the Chemistry class and define some constants
 #
-        echarge = 1.602E-19                     # magnitude of the electron charge in Coulombs
-        AMU     = 1.67377E-27                   # mass of 1 Atomic Mass Unit in kg
 #
 #  The call to plasma_chemistry(list_of_rate_files) reads the establishes the plasma chemistry data structure 
 #  and establishes a unique set of species for all of the reactions listed in the rate-equation file(s).  It also 
 #  sets up a dictionary which tells the class which species are products and which are reactants for
 #  each reaction in the file.
 #
-        path_to_rates = input_data["RateFileList"] 
-        initial_conditions= input_data["initial_conditions"]
-        self.plasma_chemistry = Chemistry(path_to_rates) 
 #  Set the initial conditions on the plasma fluid
-        self.set_initial_plasma_quantities(initial_conditions)
         self.update = self.forward_Euler
-        self.dt = self.owner.clock.dt
+        self.echarge = 1.602E-19
 
+    def initialize(self):
+        self.dt =  self.owner.clock.dt
+        path_to_rates = self.input_data["RateFileList"] 
+        self.plasma_chemistry = Chemistry(path_to_rates) 
+        initial_conditions= self.input_data["initial_conditions"]
+        self.set_initial_plasma_quantities(initial_conditions)
                     
     def set_initial_plasma_quantities(self, initial_conditions):
         """
@@ -213,11 +213,11 @@ class ThermalFluidPlasma(Module):
     #  Take care of momentum transfer
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
-            momentum_Xfer = self.density_source(RX)
-            self.Fluid[self.electron_species].velocity = self.Fluid[self.electron_species].velocity + momentum_Xfer[species]*self.dt
+            momentum_Xfer = self.get_reaction_rate(energy, RX )
+            self.Fluid[self.electron_species].velocity = self.Fluid[self.electron_species].velocity - momentum_Xfer*self.dt
     #
     #  Take care of energy losses due to inelastic collisions
-        reactions = self.plasma_chemistry.momentum_transfer_reactions
+        reactions = self.plasma_chemistry.excitation_reactions
         for RX in reactions:
             rx_rate = self.get_reaction_rate(energy, RX )
             deltaE = RX.delta_e
@@ -226,7 +226,16 @@ class ThermalFluidPlasma(Module):
     def fluid_pusher(self):
         species = self.plasma_chemistry.charged_species
         for s in species:
-            EM_forces = s.q*self.E*self.dt
+            EM_forces = s.charge/s.mass*self.Fluid[s].density*self.E
+            if not self.Fluid[s].immobile_species:
+                self.Fluid[s].velocity = self.Fluid[s].velocity + EM_forces*self.dt
+            
+    def OhmicHeating(self):
+        species = self.plasma_chemistry.charged_species
+        for s in species:
+#            self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*np.dot(self.Fluid[s].velocity,self.E,axis=1)
+            if not self.Fluid[s].immobile_species:
+                self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*self.Fluid[s].velocity*self.E.T
 
     def forward_Euler(self):
         Jp = 0.0
@@ -240,7 +249,7 @@ class ThermalFluidPlasma(Module):
 #  EM push
         self.fluid_pusher() 
 #  Ohmic heating
-        self.Fluid[self.electron_species].energy = self.Fluid[self.electron_species].energy + self.Fluid[self.electron_species].velocity*self.E * self.dt
+        self.OhmicHeating()
 
         return
 
@@ -258,6 +267,9 @@ class ThermalFluidPlasma(Module):
         if "FieldModel:E" in resource:
             print("adding E-field resource")
             self.E = resource["FieldModel:E"]
+        if "FieldModel:B" in resource:
+            print("adding B-field resource")
+            self.B = resource["FieldModel:B"]
 
 
 class RigidBeamCurrentSource(Module):
