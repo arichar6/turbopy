@@ -74,8 +74,8 @@ class FluidSpecies:
         self.name = species.name
         self.density = density*(1+owner.grid.generate_field(1))
         if not immobile_species:
-            self.velocity = velocity*(1+owner.grid.generate_field(1))
-            self.energy = energy*(1+owner.grid.generate_field(1))
+            self.velocity = self.density*velocity*(1+owner.grid.generate_field(1))
+            self.energy   = self.density*energy*(1+owner.grid.generate_field(1))
         self.immobile_species = immobile_species        
         
 class ThermalFluidPlasma(Module):
