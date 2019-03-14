@@ -2,6 +2,8 @@ from turbopy import Simulation, Module
 import numpy as np
 from chemistry import Species, Chemistry
 
+from pathlib import Path
+
 class FieldModel(Module):
     """
     This is the abstract base class for field models
@@ -108,12 +110,14 @@ class ThermalFluidPlasma(Module):
         self.update = self.forward_Euler
         self.echarge = 1.602E-19
 
-    def initialize(self):
-        self.dt =  self.owner.clock.dt
         path_to_rates = self.input_data["RateFileList"] 
         self.plasma_chemistry = Chemistry(path_to_rates) 
-        initial_conditions= self.input_data["initial_conditions"]
+        initial_conditions = self.input_data["initial_conditions"]
         self.set_initial_plasma_quantities(initial_conditions)
+
+    def initialize(self):
+        self.dt =  self.owner.clock.dt
+
                     
     def set_initial_plasma_quantities(self, initial_conditions):
         """
@@ -145,30 +149,31 @@ class ThermalFluidPlasma(Module):
                     immobile_species = True
                     self.Fluid[species]=FluidSpecies(species, immobile_species, self.owner, density, velocity, energy)
             else:
+                immobile_species = True
                 self.Fluid[species]=FluidSpecies(species, immobile_species, self.owner)
         return 
 
-    def predictor_corrector(self):
-        """
-        This function performs a predictor-corrector for updating the densities,
-        the electron velocity and energy
-        """
-        dt = self.owner.clock.dt
-#  This is the predictor step
-        sp_predictor = self.integrator(self.species, 0.5*dt)
-#  This is the corrector step
-        self.species = self.integrator(sp_predictor, dt)
-
-        return
-        
-    def integrator(self, species, dt):
-        sp_copy = species.copy()
-        rhs = self.chem.RHS(sp_copy)
-        for s in species.keys():
-            sp_copy[s].density = species[s].density + rhs['density'][s] * dt
-        sp_copy['e'].velocity = species['e'].velocity - rhs['nu_m']['e']*species['e'].velocity* dt
-        sp_copy['e'].energy = species['e'].energy   + rhs['energy']['e'] * dt
-        return sp_copy
+#     def predictor_corrector(self):
+#         """
+#         This function performs a predictor-corrector for updating the densities,
+#         the electron velocity and energy
+#         """
+#         dt = self.owner.clock.dt
+# #  This is the predictor step
+#         sp_predictor = self.integrator(self.species, 0.5*dt)
+# #  This is the corrector step
+#         self.species = self.integrator(sp_predictor, dt)
+# 
+#         return
+#         
+#     def integrator(self, species, dt):
+#         sp_copy = species.copy()
+#         rhs = self.chem.RHS(sp_copy)
+#         for s in species.keys():
+#             sp_copy[s].density = species[s].density + rhs['density'][s] * dt
+#         sp_copy['e'].velocity = species['e'].velocity - rhs['nu_m']['e']*species['e'].velocity* dt
+#         sp_copy['e'].energy = species['e'].energy   + rhs['energy']['e'] * dt
+#         return sp_copy
         
     def density_source(self, RX):
 
@@ -208,34 +213,34 @@ class ThermalFluidPlasma(Module):
         for RX in reactions:
             density_source_term = self.density_source(RX)
             for species in density_source_term:
-                self.Fluid[species].density = self.Fluid[species].density + density_source_term[species]*self.dt
+                self.Fluid[species].density += density_source_term[species]*self.dt
     #
     #  Take care of momentum transfer
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
             momentum_Xfer = self.get_reaction_rate(energy, RX )
-            self.Fluid[self.electron_species].velocity = self.Fluid[self.electron_species].velocity - momentum_Xfer*self.dt
+            self.Fluid[self.electron_species].velocity += - momentum_Xfer*self.dt
     #
     #  Take care of energy losses due to inelastic collisions
         reactions = self.plasma_chemistry.excitation_reactions
         for RX in reactions:
             rx_rate = self.get_reaction_rate(energy, RX )
             deltaE = RX.delta_e
-            self.Fluid[self.electron_species].energy = self.Fluid[self.electron_species].energy - rx_rate*deltaE*self.dt
+            self.Fluid[self.electron_species].energy += -rx_rate*deltaE*self.dt
             
     def fluid_pusher(self):
         species = self.plasma_chemistry.charged_species
         for s in species:
             EM_forces = s.charge/s.mass*self.Fluid[s].density*self.E
             if not self.Fluid[s].immobile_species:
-                self.Fluid[s].velocity = self.Fluid[s].velocity + EM_forces*self.dt
+                self.Fluid[s].velocity += EM_forces*self.dt
             
     def OhmicHeating(self):
         species = self.plasma_chemistry.charged_species
         for s in species:
 #            self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*np.dot(self.Fluid[s].velocity,self.E,axis=1)
             if not self.Fluid[s].immobile_species:
-                self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*self.Fluid[s].velocity*self.E.T
+                self.Fluid[s].energy += s.charge/self.echarge*self.Fluid[s].density*self.Fluid[s].velocity*self.E
 
     def forward_Euler(self):
         Jp = 0.0
@@ -255,9 +260,9 @@ class ThermalFluidPlasma(Module):
 
     def exchange_resources(self):
         self.publish_resource({"ResponseModel:J": self.J})
-#        self.publish_resource({"ElectronEnergy": self.species['e'].energy})
-#        self.publish_resource({"ElectronVelocity": self.species['e'].velocity})
-#        self.publish_resource({"ElectronDensity": self.species['e'].density})
+        self.publish_resource({"ElectronEnergy": self.Fluid[self.electron_species].energy})
+        self.publish_resource({"ElectronVelocity": self.Fluid[self.electron_species].velocity})
+        self.publish_resource({"ElectronDensity": self.Fluid[self.electron_species].density})
 #        self.publish_resource({"GasDensity": self.species['N2(X1)'].density})
 #        self.publish_resource({"MomentumTransfer": self.nu_m})
         
@@ -311,7 +316,8 @@ Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
 Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
 #
 #  Chemistry files
-RateFileList=['N:\\Codes\\turbopy\\chemistry\\N2_Rates_TT.txt']
+p = Path('chemistry/N2_Rates_TT.txt')
+RateFileList=[str(p)]
 # Initial Conditions:
 #       All species that do not have a non-zero partial pressure at t=0 will be set to zero
 #
@@ -323,8 +329,8 @@ initial_conditions={     'e':{'pressure':1e-5*1.0/760,'velocity':0.0,'energy':0.
 end_time = 30.E-9
 dt = 1.0E-9
 number_of_steps = int(end_time/dt)
-number_of_steps = 1
-N_grid = 8
+number_of_steps = 4
+N_grid = 4
 
 sim_config = {"Modules": [
         {"name": "FieldModel",
@@ -360,6 +366,17 @@ sim_config = {"Modules": [
              "filename": "PlasmaCurrent.csv",
              "component": 0,
          },
+        {"type": "field",
+             "field": "ElectronVelocity",
+             "output": "stdout",
+             "component": 0,
+         },
+        {"type": "field",
+             "field": "ElectronDensity",
+             "output": "stdout",
+             "component": 0,
+         },
+
         # {"type": "field",
         #      "field": "ElectronEnergy",
         #      "output": "csv",

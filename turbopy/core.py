@@ -316,9 +316,12 @@ class FieldDiagnostic(Diagnostic):
         if self.field_name in resource:
             self.field = resource[self.field_name]
     
+    def print_diag(self, data):
+        print(self.field_name, data)
+        
     def initialize(self):
         # setup output method
-        functions = {"stdout": print,
+        functions = {"stdout": self.print_diag,
                      "csv": self.write_to_csv,
                      }
         self.output_function = functions[self.input_data["output"]]
