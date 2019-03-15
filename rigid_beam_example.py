@@ -19,6 +19,11 @@ class FieldModel(Module):
         
         self.sourceterm = owner.grid.generate_field(1)
         self.old_source = owner.grid.generate_field(1)
+        E_Td = 13.61
+        self.E0 = 1E-21*E_Td*3.53420895e+22
+        print (self.E0)
+        self.owner = owner
+        self.E[:] = self.E0 * (1 + self.owner.grid.generate_field(1) )
 
     def initialize(self):
         self.solver = self.owner.find_tool_by_name(self.solver_name)
@@ -38,6 +43,7 @@ class FieldModel(Module):
         self.publish_resource({"FieldModel:B": self.B})
 
     def update(self):
+        return
         self.old_source[:] = self.sourceterm[:]
         self.sourceterm[:] = np.sum(self.currents, axis=0)
         dt = self.owner.clock.dt
@@ -213,7 +219,6 @@ class ThermalFluidPlasma(Module):
         """  Add source terms to the Fluid for a specified set of reactions
         """
         self.energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
-        print(self.energy)
     #
     # Take care of changes to the density due to exciation collisions which include ionization, recombination, etc
         reactions = self.plasma_chemistry.excitation_reactions
@@ -226,7 +231,10 @@ class ThermalFluidPlasma(Module):
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
             momentum_Xfer = self.get_reaction_rate( RX )/self.Fluid[self.electron_species].density
-            self.Fluid[self.electron_species].nV += - self.Fluid[self.electron_species].nV*momentum_Xfer*self.dt
+            # self.Fluid[self.electron_species].nV += - self.Fluid[self.electron_species].nV*momentum_Xfer*self.dt
+            mu = self.echarge/(9.11e-31*momentum_Xfer)
+            self.Fluid[self.electron_species].nV[:] = -self.Fluid[self.electron_species].density*mu*self.E
+            
     #
     #  Take care of energy losses due to inelastic collisions
         reactions = self.plasma_chemistry.excitation_reactions
@@ -240,7 +248,6 @@ class ThermalFluidPlasma(Module):
             EM_forces = s.charge/s.mass*self.E
             self.Fluid[s].nV += self.Fluid[s].density*EM_forces*self.dt
 
-            
     def OhmicHeating(self):
         for s in self.mobile:
             Z = np.sign(s.charge/self.echarge)
@@ -248,36 +255,29 @@ class ThermalFluidPlasma(Module):
             self.Fluid[s].nEnergy += Z*self.Fluid[s].nV*self.E*self.dt
 
     def forward_Euler(self):
-#
-#  update the Fluid equations for chemistry
-#
+        '''  This function first takes care of the plasma chemistry and 
+        then does the terms specific to mobile charged particles.  The call to 
+        fluid_pusher does the Lorentz force update and the call to OhmicHeating 
+        adds the J.E term to the energy equation.
+        '''
         self.RHS()
-#
-#  Take care of terms specific to mobile charged particle species
-#
-#  EM push
-        self.fluid_pusher() 
-#  Ohmic heating
+#        self.fluid_pusher() 
         self.OhmicHeating()
-#  Update the current density
         self.updateJ()
 
     def updateJ(self):
         self.J = 0
+#  No return current feedback to the field solver yet.  
         return
+#
         for s in self.mobile:
             self.J += s.charge*self.Fluid[s].nV
         return
 
     def exchange_resources(self):
-        #  Convert diagnostics to per particle values
-        V = self.Fluid[self.electron_species].nV/self.Fluid[self.electron_species].density
-        energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
         self.publish_resource({"ResponseModel:J": self.J})
         for s in self.Fluid:
             self.publish_resource({"FluidModel:" + s.name:self.Fluid[s]})
-        self.publish_resource({"ElectronVelocity": V})
-        self.publish_resource({"ElectronDensity": self.Fluid[self.electron_species].density})
 #        self.publish_resource({"GasDensity": self.species['N2(X1)'].density})
 #        self.publish_resource({"MomentumTransfer": self.nu_m})
         
@@ -343,7 +343,10 @@ class FluidDiagnostic(Diagnostic):
             self.file = open(self.input_data["filename"], 'wb')
             np.savetxt(self.file, self.outputbuffer, delimiter=",")
             self.file.close()
+            
+            
 Diagnostic.add_diagnostic_to_library("fluid",FluidDiagnostic)
+
 
 class RigidBeamCurrentSource(Module):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -384,7 +387,7 @@ Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
 Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
 #
 #  Chemistry files
-p = Path('chemistry/N2_Rates_TT.txt')
+p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
 RateFileList=[str(p)]
 # Initial Conditions:
 #       All species that do not have a non-zero partial pressure at t=0 will be set to zero
@@ -394,11 +397,11 @@ initial_conditions={     'e':{'pressure':1e-5*1.0/760,'velocity':0.0,'energy':0.
                      'N2(X1)':{'pressure':1.0/760,'velocity':0.0,'energy':1.0/40.0}
                      }                    
 
-end_time = 30.E-9
-dt = 1.0E-9
+end_time = 150.E-9
+dt = 0.1E-9
 number_of_steps = int(end_time/dt)
-number_of_steps = 100
-N_grid = 16
+#number_of_steps = 200
+N_grid = 4
 
 sim_config = {"Modules": [
         {"name": "FieldModel",
@@ -439,11 +442,11 @@ sim_config = {"Modules": [
         #      "output": "stdout",
         #      "component": "density",
         #  },
-        # {"type": "fluid",
-        #      "fluid_name": "FluidModel:e",
-        #      "output": "stdout",
-        #      "component": "energy",
-        #  },
+        {"type": "fluid",
+             "fluid_name": "FluidModel:e",
+             "output": "stdout",
+             "component": "energy",
+         },
         # {"type": "fluid",
         #      "fluid_name": "FluidModel:e",
         #      "output": "stdout",
@@ -464,42 +467,6 @@ sim_config = {"Modules": [
         #      "output": "stdout",
         #      "component": "density",
         # },
-#         {"type": "field",
-#              "field": "ElectronDensity",
-#              "output": "csv",
-#              "component": 0,
-#          },
-
-        # {"type": "field",
-        #      "field": "ElectronEnergy",
-        #      "output": "csv",
-        #      "filename": "ElectronEnergy.csv",
-        #      "component": 0,
-        #  },
-        # {"type": "field",
-        #      "field": "ElectronVelocity",
-        #      "output": "csv",
-        #      "filename": "ElectronVelocity.csv",
-        #      "component": 0,
-        #  },
-        # {"type": "field",
-        #      "field": "ElectronDensity",
-        #      "output": "csv",
-        #      "filename": "ElectronDensity.csv",
-        #      "component": 0,
-        #  },
-        # {"type": "field",
-        #      "field": "GasDensity",
-        #      "output": "csv",
-        #      "filename": "GasDensity.csv",
-        #      "component": 0,
-        #  },
-        # {"type": "field",
-        #      "field": "MomentumTransfer",
-        #      "output": "csv",
-        #      "filename": "nuM.csv",
-        #      "component": 0,
-        #  },
             {"type": "grid"},
     ],
     "Tools": [
