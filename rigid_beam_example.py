@@ -70,15 +70,15 @@ class PlasmaResponseModel(Module):
         pass
 #
 class FluidSpecies:
-    def __init__(self, species, immobile_species, owner, density=0, velocity=0, energy=0):
+    def __init__(self, species, mobile_species, owner, density=0, velocity=0, energy=0):
         self.q = species.charge
         self.m = species.mass
         self.name = species.name
         self.density = density*(1+owner.grid.generate_field(1))
-        if not immobile_species:
-            self.velocity = self.density*velocity*(1+owner.grid.generate_field(1))
-            self.energy   = self.density*energy*(1+owner.grid.generate_field(1))
-        self.immobile_species = immobile_species        
+        if mobile_species:
+            self.nV = self.density*velocity*(1+owner.grid.generate_field(1))
+            self.nEnergy   = self.density*energy*(1+owner.grid.generate_field(1))
+        self.mobile_species = mobile_species        
         
 class ThermalFluidPlasma(Module):
     """
@@ -113,11 +113,12 @@ class ThermalFluidPlasma(Module):
         path_to_rates = self.input_data["RateFileList"] 
         self.plasma_chemistry = Chemistry(path_to_rates) 
         initial_conditions = self.input_data["initial_conditions"]
+        self.set_mobile_species()
         self.set_initial_plasma_quantities(initial_conditions)
+        self.set_electron_species()
 
     def initialize(self):
         self.dt =  self.owner.clock.dt
-
                     
     def set_initial_plasma_quantities(self, initial_conditions):
         """
@@ -131,6 +132,7 @@ class ThermalFluidPlasma(Module):
         IC_keys = initial_conditions.keys()
         self.Fluid = {}
         for species in self.plasma_chemistry.species:
+            mobile_species = (species in self.mobile)
             if species.name in IC_keys:
                 ic = initial_conditions[species.name]
                 pressure = ic['pressure']
@@ -140,18 +142,23 @@ class ThermalFluidPlasma(Module):
                 print("Pressure:",pressure)
                 print("Velocity:",velocity)
                 print("Energy:",energy)
-
-                if species.name == 'e':
-                    immobile_species = False
-                    self.Fluid[species]=FluidSpecies(species, immobile_species, self.owner, density, velocity, energy)
-                    self.electron_species = species
-                else:
-                    immobile_species = True
-                    self.Fluid[species]=FluidSpecies(species, immobile_species, self.owner, density, velocity, energy)
+                self.Fluid[species]=FluidSpecies(species, mobile_species, self.owner, density, velocity, energy)
             else:
-                immobile_species = True
-                self.Fluid[species]=FluidSpecies(species, immobile_species, self.owner)
+                self.Fluid[species]=FluidSpecies(species, mobile_species, self.owner)
         return 
+        
+    def set_electron_species(self):
+        for s in self.plasma_chemistry.species:
+            if s.name == 'e':
+                self.electron_species = s
+        return
+
+    def set_mobile_species(self):
+        self.mobile = []
+        for s in self.plasma_chemistry.species:
+            if s.name == 'e':
+                self.mobile.append(s)
+        return
 
 #     def predictor_corrector(self):
 #         """
@@ -177,8 +184,7 @@ class ThermalFluidPlasma(Module):
         
     def density_source(self, RX):
 
-        energy = self.Fluid[self.electron_species].energy
-        rx_rate = self.get_reaction_rate(energy, RX )
+        rx_rate = self.get_reaction_rate( RX )
         source={}
         
         for reactant in RX.reactants:
@@ -192,9 +198,9 @@ class ThermalFluidPlasma(Module):
             source[product] =  source[product]  + rx_rate
         return source
                 
-    def get_reaction_rate(self, energy, RX):
+    def get_reaction_rate(self, RX):
 #  Get the rate coefficient
-        k = (1.0E-6)*RX.get_rate_constant(energy)                           
+        k = (1.0E-6)*RX.get_rate_constant(self.energy)                           
 # Determine the reaction rate from k
         density_product = 1
         for r in RX.reactants:
@@ -206,72 +212,70 @@ class ThermalFluidPlasma(Module):
     def RHS(self):
         """  Add source terms to the Fluid for a specified set of reactions
         """
-        energy = self.Fluid[self.electron_species].energy
+        self.energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
     #
     # Take care of changes to the density due to exciation collisions which include ionization, recombination, etc
         reactions = self.plasma_chemistry.excitation_reactions
         for RX in reactions:
-            density_source_term = self.density_source(RX)
+            density_source_term = self.density_source( RX )
             for species in density_source_term:
                 self.Fluid[species].density += density_source_term[species]*self.dt
     #
     #  Take care of momentum transfer
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
-            momentum_Xfer = self.get_reaction_rate(energy, RX )
-            self.Fluid[self.electron_species].velocity += - self.Fluid[self.electron_species].velocity*momentum_Xfer*self.dt
+            momentum_Xfer = self.get_reaction_rate( RX )/self.Fluid[self.electron_species].density
+            self.Fluid[self.electron_species].nV += - self.Fluid[self.electron_species].nV*momentum_Xfer*self.dt
     #
     #  Take care of energy losses due to inelastic collisions
         reactions = self.plasma_chemistry.excitation_reactions
         for RX in reactions:
-            rx_rate = self.get_reaction_rate(energy, RX )
+            rx_rate = self.get_reaction_rate( RX )
             deltaE = RX.delta_e
-            self.Fluid[self.electron_species].energy += -rx_rate*deltaE*self.dt
+            self.Fluid[self.electron_species].nEnergy += -rx_rate*deltaE*self.dt
             
     def fluid_pusher(self):
-        species = self.plasma_chemistry.charged_species
-        for s in species:
-            if not self.Fluid[s].immobile_species:
-                print("q/m:", s.charge/s.mass)
-                print("E:", self.E)
-                EM_forces = s.charge/s.mass*self.E
-                print("before:", self.Fluid[s].velocity)
-                self.Fluid[s].velocity += EM_forces*self.dt
-                print("after:", self.Fluid[s].velocity)
+        for s in self.mobile:
+            EM_forces = s.charge/s.mass*self.E
+            self.Fluid[s].nV += self.Fluid[s].density*EM_forces*self.dt
             
     def OhmicHeating(self):
-        species = self.plasma_chemistry.charged_species
-        for s in species:
-#            self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*np.dot(self.Fluid[s].velocity,self.E,axis=1)
-            if not self.Fluid[s].immobile_species:
-                self.Fluid[s].energy += s.charge/self.echarge*self.Fluid[s].velocity*self.E
+        for s in self.mobile:
+#            self.Fluid[s].nEnergy += s.charge/self.echarge*self.Fluid[s].velocity*self.E.T
+            self.Fluid[s].nEnergy += s.charge/self.echarge*self.Fluid[s].nV*self.E
 
     def forward_Euler(self):
-        Jp = 0.0
 #
 #  update the Fluid equations for chemistry
 #
         self.RHS()
 #
-#  Take care of terms specific to charged particle species
+#  Take care of terms specific to mobile charged particle species
 #
 #  EM push
         self.fluid_pusher() 
 #  Ohmic heating
         self.OhmicHeating()
+#  Update the current density
+        self.updateJ()
 
+    def updateJ(self):
+        self.J = 0
+        for s in self.mobile:
+            self.J += s.charge*self.Fluid[s].nV
         return
 
     def exchange_resources(self):
+        #  Convert diagnostics to per particle values
+        V = self.Fluid[self.electron_species].nV/self.Fluid[self.electron_species].density
+        energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
         self.publish_resource({"ResponseModel:J": self.J})
-        self.publish_resource({"ElectronEnergy": self.Fluid[self.electron_species].energy})
-        self.publish_resource({"ElectronVelocity": self.Fluid[self.electron_species].velocity})
+        self.publish_resource({"ElectronEnergy": energy})
+        self.publish_resource({"ElectronVelocity": V})
         self.publish_resource({"ElectronDensity": self.Fluid[self.electron_species].density})
 #        self.publish_resource({"GasDensity": self.species['N2(X1)'].density})
 #        self.publish_resource({"MomentumTransfer": self.nu_m})
         
-        
-
     def inspect_resource(self, resource):
         if "FieldModel:E" in resource:
             print("adding E-field resource")
@@ -279,7 +283,6 @@ class ThermalFluidPlasma(Module):
         if "FieldModel:B" in resource:
             print("adding B-field resource")
             self.B = resource["FieldModel:B"]
-
 
 class RigidBeamCurrentSource(Module):
     def __init__(self, owner: Simulation, input_data: dict):
