@@ -219,7 +219,7 @@ class ThermalFluidPlasma(Module):
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
             momentum_Xfer = self.get_reaction_rate(energy, RX )
-            self.Fluid[self.electron_species].velocity += - momentum_Xfer*self.dt
+            self.Fluid[self.electron_species].velocity += - self.Fluid[self.electron_species].velocity*momentum_Xfer*self.dt
     #
     #  Take care of energy losses due to inelastic collisions
         reactions = self.plasma_chemistry.excitation_reactions
