@@ -200,7 +200,7 @@ class ThermalFluidPlasma(Module):
         for r in RX.reactants:
             nA = self.Fluid[r].density
             density_product = density_product*nA
-        reaction_rate= density_product*k
+        reaction_rate = density_product*k
         return reaction_rate
                 
     def RHS(self):
@@ -231,16 +231,20 @@ class ThermalFluidPlasma(Module):
     def fluid_pusher(self):
         species = self.plasma_chemistry.charged_species
         for s in species:
-            EM_forces = s.charge/s.mass*self.Fluid[s].density*self.E
             if not self.Fluid[s].immobile_species:
+                print("q/m:", s.charge/s.mass)
+                print("E:", self.E)
+                EM_forces = s.charge/s.mass*self.E
+                print("before:", self.Fluid[s].velocity)
                 self.Fluid[s].velocity += EM_forces*self.dt
+                print("after:", self.Fluid[s].velocity)
             
     def OhmicHeating(self):
         species = self.plasma_chemistry.charged_species
         for s in species:
 #            self.Fluid[s].energy = self.Fluid[s].energy + s.charge/self.echarge*self.Fluid[s].density*np.dot(self.Fluid[s].velocity,self.E,axis=1)
             if not self.Fluid[s].immobile_species:
-                self.Fluid[s].energy += s.charge/self.echarge*self.Fluid[s].density*self.Fluid[s].velocity*self.E
+                self.Fluid[s].energy += s.charge/self.echarge*self.Fluid[s].velocity*self.E
 
     def forward_Euler(self):
         Jp = 0.0
@@ -371,11 +375,11 @@ sim_config = {"Modules": [
              "output": "stdout",
              "component": 0,
          },
-        {"type": "field",
-             "field": "ElectronDensity",
-             "output": "stdout",
-             "component": 0,
-         },
+#         {"type": "field",
+#              "field": "ElectronDensity",
+#              "output": "stdout",
+#              "component": 0,
+#          },
 
         # {"type": "field",
         #      "field": "ElectronEnergy",
