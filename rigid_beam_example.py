@@ -1,4 +1,4 @@
-from turbopy import Simulation, Module
+from turbopy import Simulation, Module, Diagnostic
 import numpy as np
 from chemistry import Species, Chemistry
 
@@ -213,6 +213,7 @@ class ThermalFluidPlasma(Module):
         """  Add source terms to the Fluid for a specified set of reactions
         """
         self.energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
+        print(self.energy)
     #
     # Take care of changes to the density due to exciation collisions which include ionization, recombination, etc
         reactions = self.plasma_chemistry.excitation_reactions
@@ -238,11 +239,13 @@ class ThermalFluidPlasma(Module):
         for s in self.mobile:
             EM_forces = s.charge/s.mass*self.E
             self.Fluid[s].nV += self.Fluid[s].density*EM_forces*self.dt
+
             
     def OhmicHeating(self):
         for s in self.mobile:
-#            self.Fluid[s].nEnergy += s.charge/self.echarge*self.Fluid[s].velocity*self.E.T
-            self.Fluid[s].nEnergy += s.charge/self.echarge*self.Fluid[s].nV*self.E
+            Z = np.sign(s.charge/self.echarge)
+#            self.Fluid[s].nEnergy += Z*self.Fluid[s].velocity*self.E.T
+            self.Fluid[s].nEnergy += Z*self.Fluid[s].nV*self.E*self.dt
 
     def forward_Euler(self):
 #
@@ -261,6 +264,7 @@ class ThermalFluidPlasma(Module):
 
     def updateJ(self):
         self.J = 0
+        return
         for s in self.mobile:
             self.J += s.charge*self.Fluid[s].nV
         return
@@ -270,7 +274,8 @@ class ThermalFluidPlasma(Module):
         V = self.Fluid[self.electron_species].nV/self.Fluid[self.electron_species].density
         energy = self.Fluid[self.electron_species].nEnergy/self.Fluid[self.electron_species].density
         self.publish_resource({"ResponseModel:J": self.J})
-        self.publish_resource({"ElectronEnergy": energy})
+        for s in self.Fluid:
+            self.publish_resource({"FluidModel:" + s.name:self.Fluid[s]})
         self.publish_resource({"ElectronVelocity": V})
         self.publish_resource({"ElectronDensity": self.Fluid[self.electron_species].density})
 #        self.publish_resource({"GasDensity": self.species['N2(X1)'].density})
@@ -283,6 +288,62 @@ class ThermalFluidPlasma(Module):
         if "FieldModel:B" in resource:
             print("adding B-field resource")
             self.B = resource["FieldModel:B"]
+
+class FluidDiagnostic(Diagnostic):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        
+        self.component = input_data["component"]
+        self.fluid_name = input_data["fluid_name"]
+        self.output = input_data["output"] 
+        self.field = None
+        self.units = "Diagnostic Units"
+        self.file = None
+        
+    def diagnose(self):
+        if self.component=='energy':
+            self.output_function(self.fluid.nEnergy/self.fluid.density)
+            self.units = "(eV)"
+        elif self.component=='Vz':
+            self.output_function(self.fluid.nV/self.fluid.density*1E-7)
+            self.units = "(cm/ns)"
+        elif self.component=='density':      
+            self.output_function(self.fluid.__dict__[self.component]*1E-6)
+            self.units = "cm^-3"
+        else:
+            print("Warning:  Fluid diagnostic component undefined")
+            
+
+    def inspect_resource(self, resource):
+        if self.fluid_name in resource:
+            self.fluid = resource[self.fluid_name]
+    
+    def print_diag(self, data):
+        print(self.fluid_name, self.component,self.units, data)
+        
+    def initialize(self):
+        # setup output method
+        functions = {"stdout": self.print_diag,
+                     "csv": self.write_to_csv,
+                     }
+        self.output_function = functions[self.input_data["output"]]
+        if self.input_data["output"] == "csv":
+            self.outputbuffer = np.zeros((
+                        self.owner.clock.num_steps+1,
+                        self.owner.grid.num_points
+                        ))
+    
+    def write_to_csv(self, data):
+        i = self.owner.clock.this_step
+        self.outputbuffer[i,:] = data[:]
+    
+    def finalize(self):
+        self.diagnose()
+        if self.input_data["output"] == "csv":
+            self.file = open(self.input_data["filename"], 'wb')
+            np.savetxt(self.file, self.outputbuffer, delimiter=",")
+            self.file.close()
+Diagnostic.add_diagnostic_to_library("fluid",FluidDiagnostic)
 
 class RigidBeamCurrentSource(Module):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -336,8 +397,8 @@ initial_conditions={     'e':{'pressure':1e-5*1.0/760,'velocity':0.0,'energy':0.
 end_time = 30.E-9
 dt = 1.0E-9
 number_of_steps = int(end_time/dt)
-number_of_steps = 4
-N_grid = 4
+number_of_steps = 100
+N_grid = 16
 
 sim_config = {"Modules": [
         {"name": "FieldModel",
@@ -373,14 +434,39 @@ sim_config = {"Modules": [
              "filename": "PlasmaCurrent.csv",
              "component": 0,
          },
-        {"type": "field",
-             "field": "ElectronVelocity",
-             "output": "stdout",
-             "component": 0,
-         },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:e",
+        #      "output": "stdout",
+        #      "component": "density",
+        #  },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:e",
+        #      "output": "stdout",
+        #      "component": "energy",
+        #  },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:e",
+        #      "output": "stdout",
+        #      "component": "Vz",
+        #  },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:N2(X1)",
+        #      "output": "stdout",
+        #      "component": "density",
+        #  },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:N2(Rot)",
+        #      "output": "stdout",
+        #      "component": "density",
+        #  },
+        # {"type": "fluid",
+        #      "fluid_name": "FluidModel:N2(v1)",
+        #      "output": "stdout",
+        #      "component": "density",
+        # },
 #         {"type": "field",
 #              "field": "ElectronDensity",
-#              "output": "stdout",
+#              "output": "csv",
 #              "component": 0,
 #          },
 
