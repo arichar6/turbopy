@@ -19,11 +19,12 @@ class FieldModel(Module):
         
         self.sourceterm = owner.grid.generate_field(1)
         self.old_source = owner.grid.generate_field(1)
-        E_Td = 13.61
-        self.E0 = 1E-21*E_Td*3.53420895e+22
-        print (self.E0)
-        self.owner = owner
-        self.E[:] = self.E0 * (1 + self.owner.grid.generate_field(1) )
+        # E_Td = 13.61
+        # E_Td = 211.9 
+        # self.E0 = 1E-21*E_Td*3.53420895e+22
+        # print (self.E0)
+        # self.owner = owner
+        # self.E[:] = self.E0 * (1 + self.owner.grid.generate_field(1) )
 
     def initialize(self):
         self.solver = self.owner.find_tool_by_name(self.solver_name)
@@ -43,7 +44,7 @@ class FieldModel(Module):
         self.publish_resource({"FieldModel:B": self.B})
 
     def update(self):
-        return
+        # return
         self.old_source[:] = self.sourceterm[:]
         self.sourceterm[:] = np.sum(self.currents, axis=0)
         dt = self.owner.clock.dt
@@ -231,9 +232,9 @@ class ThermalFluidPlasma(Module):
         reactions = self.plasma_chemistry.momentum_transfer_reactions
         for RX in reactions:
             momentum_Xfer = self.get_reaction_rate( RX )/self.Fluid[self.electron_species].density
-            # self.Fluid[self.electron_species].nV += - self.Fluid[self.electron_species].nV*momentum_Xfer*self.dt
-            mu = self.echarge/(9.11e-31*momentum_Xfer)
-            self.Fluid[self.electron_species].nV[:] = -self.Fluid[self.electron_species].density*mu*self.E
+            self.Fluid[self.electron_species].nV += - self.Fluid[self.electron_species].nV*momentum_Xfer*self.dt
+            # mu = self.echarge/(9.11e-31*momentum_Xfer)
+            # self.Fluid[self.electron_species].nV[:] = -self.Fluid[self.electron_species].density*mu*self.E
             
     #
     #  Take care of energy losses due to inelastic collisions
@@ -261,7 +262,7 @@ class ThermalFluidPlasma(Module):
         adds the J.E term to the energy equation.
         '''
         self.RHS()
-#        self.fluid_pusher() 
+        self.fluid_pusher() 
         self.OhmicHeating()
         self.updateJ()
 
@@ -335,7 +336,7 @@ class FluidDiagnostic(Diagnostic):
     
     def write_to_csv(self, data):
         i = self.owner.clock.this_step
-        self.outputbuffer[i,:] = data[:]
+        self.outputbuffer[i,:] = data[:,0]
     
     def finalize(self):
         self.diagnose()
@@ -380,14 +381,15 @@ class RigidBeamCurrentSource(Module):
         self.set_current_for_time(self.owner.clock.time)
     
     def set_current_for_time(self, time):
-        self.J[:] = np.sin(np.pi*time/self.rise_time/2)**2 * self.profile        
+        self.J[:] = (time<2*self.rise_time)*np.sin(np.pi*time/self.rise_time/2)**2 * self.profile        
 
 Module.add_module_to_library("FieldModel", FieldModel)
 Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
 Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
-#
+##
 #  Chemistry files
-p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
+# p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
+p = Path('chemistry/N2_Rates_TT.txt')
 RateFileList=[str(p)]
 # Initial Conditions:
 #       All species that do not have a non-zero partial pressure at t=0 will be set to zero
@@ -401,7 +403,7 @@ end_time = 150.E-9
 dt = 0.1E-9
 number_of_steps = int(end_time/dt)
 #number_of_steps = 200
-N_grid = 4
+N_grid = 8
 
 sim_config = {"Modules": [
         {"name": "FieldModel",
@@ -444,7 +446,8 @@ sim_config = {"Modules": [
         #  },
         {"type": "fluid",
              "fluid_name": "FluidModel:e",
-             "output": "stdout",
+             "output": "csv",
+             "filename": "Energy.csv",
              "component": "energy",
          },
         # {"type": "fluid",
