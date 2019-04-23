@@ -260,6 +260,7 @@ class ThermalFluidPlasma(Module):
 #  Ohmic heating
         self.OhmicHeating()
 
+        self.updateCurrent()
         return
 
     def exchange_resources(self):
@@ -315,9 +316,9 @@ class RigidBeamCurrentSource(Module):
     def set_current_for_time(self, time):
         self.J[:] = np.sin(np.pi*time/self.rise_time/2)**2 * self.profile        
 
-Module.add_module_to_library("FieldModel", FieldModel)
-Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
-Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
+Module.register("FieldModel", FieldModel)
+Module.register("ThermalFluidPlasma", ThermalFluidPlasma)
+Module.register("RigidBeamCurrentSource", RigidBeamCurrentSource)
 #
 #  Chemistry files
 p = Path('chemistry/N2_Rates_TT.txt')

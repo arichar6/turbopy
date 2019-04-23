@@ -84,21 +84,23 @@ class Simulation:
         self.clock = SimulationClock(self, self.input_data["Clock"])
     
     def read_tools_from_input(self):
-        for t in self.input_data["Tools"]:
-            tool_class = ComputeTool.lookup_name(t["type"])
-            # todo: somehow make tool names unique, or prevent more than one each
-            self.compute_tools.append(tool_class(owner=self, input_data=t))
+        if "Tools" in self.input_data:
+            for t in self.input_data["Tools"]:
+                tool_class = ComputeTool.lookup(t["type"])
+                # todo: somehow make tool names unique, or prevent more than one each
+                self.compute_tools.append(tool_class(owner=self, input_data=t))
 
     def read_modules_from_input(self):
         for module_data in self.input_data["Modules"]:
-            module_class = Module.lookup_name(module_data["name"])
+            module_class = Module.lookup(module_data["name"])
             self.modules.append(module_class(owner=self, input_data=module_data))
         self.sort_modules()
     
     def read_diagnostics_from_input(self):
-        for d in self.input_data["Diagnostics"]:
-            diagnostic_class = Diagnostic.lookup_name(d["type"])
-            self.diagnostics.append(diagnostic_class(owner=self, input_data=d))
+        if "Diagnostics" in self.input_data:
+            for d in self.input_data["Diagnostics"]:
+                diagnostic_class = Diagnostic.lookup(d["type"])
+                self.diagnostics.append(diagnostic_class(owner=self, input_data=d))
     
     def sort_modules(self):
         pass
@@ -110,7 +112,30 @@ class Simulation:
         return None
             
 
-class Module:
+class DynamicFactory:
+    """
+    This base class provides a dynamic factory pattern functionality to classes 
+    that derive from this.
+    """
+    _registry = {}
+    _factory_type_name = "Class"
+    
+    @classmethod
+    def register(cls, name_to_register, class_to_register):
+        if name_to_register in cls._registry:
+            raise ValueError("{0} '{1}' already registered".format(cls._factory_type_name, name_to_register))
+        cls._registry[name_to_register] = class_to_register
+
+    @classmethod
+    def lookup(cls, name):
+        try:
+            return cls._registry[name]
+        except KeyError:
+            raise KeyError("{0} '{1}' not found in registry".format(cls._factory_type_name, name))
+
+
+
+class Module(DynamicFactory):
     """
     This is the base class for all physics modules
     Based on Module class in TurboWAVE
@@ -120,20 +145,7 @@ class Module:
     thing being shared. Note that the value stored in the dictionary needs to be mutable. 
     Make sure not to reinitialize, because other modules will be holding a reference to it.
     """
-    module_library = {}
-    
-    @classmethod
-    def add_module_to_library(cls, module_name, module_class):
-        if module_name in cls.module_library:
-            raise ValueError("Module '{0}' already in module library".format(module_name))
-        cls.module_library[module_name] = module_class
-    
-    @classmethod
-    def lookup_name(cls, module_name):
-        try:
-            return cls.module_library[module_name]
-        except KeyError:
-            raise KeyError("Module '{0}' not found in module library".format(module_name))
+    _factory_type_name = "Module"
     
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
@@ -170,26 +182,13 @@ class Module:
         pass
         
 
-class ComputeTool:
+class ComputeTool(DynamicFactory):
     """
     This is the base class for compute tools. These are the compute-heavy functions,
     which have implementations of numerical methods which can be shared between modules.
     """
-    tool_library = {}
+    _factory_type_name = "Compute Tool"
     
-    @classmethod
-    def add_tool_to_library(cls, tool_name, tool_class):
-        if tool_name in cls.tool_library:
-            raise ValueError("Tool '{0}' already in tool library".format(tool_name))
-        cls.tool_library[tool_name] = tool_class
-
-    @classmethod
-    def lookup_name(cls, tool_name):
-        try:
-            return cls.tool_library[tool_name]
-        except KeyError:
-            raise KeyError("Tool '{0}' not found in tool library".format(tool_name))
-
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
         self.input_data = input_data
@@ -219,7 +218,7 @@ class PoissonSolver1DRadial(ComputeTool):
         return I2 - I2[-1]
 
 
-ComputeTool.add_tool_to_library("PoissonSolver1DRadial", PoissonSolver1DRadial)
+ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
 
 
 class SimulationClock:
@@ -241,27 +240,18 @@ class SimulationClock:
         return self.this_step < self.num_steps
 
 
-class Diagnostic:
-    diagnostic_library = {}
-    
-    @classmethod
-    def add_diagnostic_to_library(cls, diagnostic_name, diagnostic_class):
-        if diagnostic_name in cls.diagnostic_library:
-            raise ValueError("Diagnositc '{0}' already in diagnositc library".format(diagnostic_name))
-        cls.diagnostic_library[diagnostic_name] = diagnostic_class
-
-    @classmethod
-    def lookup_name(cls, diagnostic_name):
-        try:
-            return cls.diagnostic_library[diagnostic_name]
-        except KeyError:
-            raise KeyError("Diagnositc '{0}' not found in diagnositc library".format(diagnostic_name))
-            
+class Diagnostic(DynamicFactory):
+    _factory_type_name = "Diagnostic"
+                
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
         self.input_data = input_data
 
     def inspect_resource(self, resource: dict):
+        """
+        If your subclass needs the data described by the key, now's their chance to 
+        save a pointer to the data
+        """
         pass
         
     def diagnose(self):
@@ -361,9 +351,9 @@ class GridDiagnostic(Diagnostic):
     def finalize(self):
         pass                
 
-Diagnostic.add_diagnostic_to_library("point", PointDiagnostic)
-Diagnostic.add_diagnostic_to_library("field", FieldDiagnostic)
-Diagnostic.add_diagnostic_to_library("grid", GridDiagnostic)
+Diagnostic.register("point", PointDiagnostic)
+Diagnostic.register("field", FieldDiagnostic)
+Diagnostic.register("grid", GridDiagnostic)
 
 
 class Grid:
