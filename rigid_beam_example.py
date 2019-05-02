@@ -344,8 +344,7 @@ class FluidDiagnostic(Diagnostic):
             self.file = open(self.input_data["filename"], 'wb')
             np.savetxt(self.file, self.outputbuffer, delimiter=",")
             self.file.close()
-            
-            
+
 Diagnostic.add_diagnostic_to_library("fluid",FluidDiagnostic)
 
 

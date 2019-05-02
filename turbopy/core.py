@@ -198,6 +198,46 @@ class ComputeTool:
     def initialize(self):
         pass
 
+class Upwind(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+    def solve(self,F):
+        grid = self.owner.grid.r
+        am = F[1:]<0
+        ap = F[0:-1]>0
+        
+        dxm = np.abs(grid[0:-1]-grid[1:])
+        dFm_dxm = (F[0:-1]-F[1:])/dxm
+        dxp = np.abs(grid[1:]-grid[0:-1])
+        dFp_dxp = (F[1:]-F[0:-1])/dxp
+        RHS = -(am * dFp_dxp + ap * dFm_dxm)
+        return RHS
+ComputeTool.add_tool_to_library("Upwind", Upwind)
+
+class CentralDifference(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+    def solve(self,F):
+        grid = self.owner.grid.r
+        am = F[1:]<0
+        ap = F[0:-1]>0
+        
+        dxm = np.abs(grid[0:-1]-grid[1:])
+        dFm_dxm = (F[0:-1]-F[1:])/dxm
+        dxp = np.abs(grid[1:]-grid[0:-1])
+        dFp_dxp = (F[1:]-F[0:-1])/dxp
+        RHS = -(am * dFp_dxp + ap * dFm_dxm)
+        return RHS
+ComputeTool.add_tool_to_library("CentralDifference", CentralDifference)
+
+
+class ForwardEuler(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+    def solve(self,U,RHS,dt):
+        Unew = U + RHS * dt
+        return Unew
+ComputeTool.add_tool_to_library("ForwardEuler", ForwardEuler)
 
 class PoissonSolver1DRadial(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -378,7 +418,7 @@ class Grid:
         self.cell_widths = (self.r[1:] - self.r[:-1])
     
     def generate_field(self, num_components=1):
-        return np.zeros((self.num_points, num_components))
+        return np.squeeze(np.zeros((self.num_points, num_components)))
     
     def generate_linear(self):
         return np.linspace(0, 1, self.num_points)
