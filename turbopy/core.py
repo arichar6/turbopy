@@ -3,6 +3,7 @@
 # Based on the structure of turboWAVE
 #
 import numpy as np
+import scipy.interpolate as interpolate
 
 class Simulation:
     """
@@ -197,47 +198,6 @@ class ComputeTool(DynamicFactory):
     def initialize(self):
         pass
 
-class Upwind(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-    def solve(self,F):
-        grid = self.owner.grid.r
-        am = F[1:]<0
-        ap = F[0:-1]>0
-        
-        dxm = np.abs(grid[0:-1]-grid[1:])
-        dFm_dxm = (F[0:-1]-F[1:])/dxm
-        dxp = np.abs(grid[1:]-grid[0:-1])
-        dFp_dxp = (F[1:]-F[0:-1])/dxp
-        RHS = -(am * dFp_dxp + ap * dFm_dxm)
-        return RHS
-ComputeTool.add_tool_to_library("Upwind", Upwind)
-
-class CentralDifference(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-    def solve(self,F):
-        grid = self.owner.grid.r
-        am = F[1:]<0
-        ap = F[0:-1]>0
-        
-        dxm = np.abs(grid[0:-1]-grid[1:])
-        dFm_dxm = (F[0:-1]-F[1:])/dxm
-        dxp = np.abs(grid[1:]-grid[0:-1])
-        dFp_dxp = (F[1:]-F[0:-1])/dxp
-        RHS = -(am * dFp_dxp + ap * dFm_dxm)
-        return RHS
-ComputeTool.add_tool_to_library("CentralDifference", CentralDifference)
-
-
-class ForwardEuler(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-    def solve(self,U,RHS,dt):
-        Unew = U + RHS * dt
-        return Unew
-ComputeTool.add_tool_to_library("ForwardEuler", ForwardEuler)
-
 class PoissonSolver1DRadial(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -301,12 +261,18 @@ class BorisPush(ComputeTool):
         momentum[:] = vplus + dt * E * charge / 2
         m2 = np.sqrt(mass**2 + np.dot(momentum, momentum)/self.c2)
         position[:] = position + dt * momentum / m2
-
+        
+class Interpolators(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+    def interpolate1D(self,x,y,kind='linear'):
+        f = interpolate.interp1d(x,y,kind)
+        return f
 
 ComputeTool.register("BorisPush", BorisPush)
 ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
 ComputeTool.register("FiniteDifference", FiniteDifference)
-
+ComputeTool.register("Interpolators",Interpolators)
 
 class SimulationClock:
     def __init__(self, owner: Simulation, clock_data: dict):

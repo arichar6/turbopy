@@ -49,8 +49,7 @@ class FieldModel(Module):
         self.sourceterm[:] = np.sum(self.currents, axis=0)
         dt = self.owner.clock.dt
         dJ = (self.sourceterm - self.old_source)/dt
-        self.E[:,0] = self.solver.solve( self.mu0 * dJ[:,0] )
-
+        self.E[:] = self.solver.solve( self.mu0 * dJ[:] )
 
 class PlasmaResponseModel(Module):
     """
@@ -345,7 +344,7 @@ class FluidDiagnostic(Diagnostic):
             np.savetxt(self.file, self.outputbuffer, delimiter=",")
             self.file.close()
 
-Diagnostic.add_diagnostic_to_library("fluid",FluidDiagnostic)
+Diagnostic.register("fluid",FluidDiagnostic)
 
 
 class RigidBeamCurrentSource(Module):
@@ -372,7 +371,7 @@ class RigidBeamCurrentSource(Module):
                         self.peak_current * 1.0/(1.0+(r/self.beam_radius)**2)**2,
                     }
         try:
-            self.profile[:, 0] = profiles[profile_type](self.owner.grid.r)
+            self.profile[:] = profiles[profile_type](self.owner.grid.r)
         except KeyError:
             raise KeyError("Unknown profile type: {0}".format(profile_type))
             
@@ -382,9 +381,9 @@ class RigidBeamCurrentSource(Module):
     def set_current_for_time(self, time):
         self.J[:] = (time<2*self.rise_time)*np.sin(np.pi*time/self.rise_time/2)**2 * self.profile        
 
-Module.add_module_to_library("FieldModel", FieldModel)
-Module.add_module_to_library("ThermalFluidPlasma", ThermalFluidPlasma)
-Module.add_module_to_library("RigidBeamCurrentSource", RigidBeamCurrentSource)
+Module.register("FieldModel", FieldModel)
+Module.register("ThermalFluidPlasma", ThermalFluidPlasma)
+Module.register("RigidBeamCurrentSource", RigidBeamCurrentSource)
 ##
 #  Chemistry files
 # p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
