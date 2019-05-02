@@ -84,6 +84,7 @@ class Chemistry:
     def __init__(self,RateFileList):
         self.RX_list = []
         self.reactions = self.CreateChemistry(RateFileList)
+        print(self.reactions)
         self.species = self.UniqueSpeciesList()
         self.momentum_transfer_reactions = [r for r in self.reactions if r.type=='MomXfer']
         self.excitation_reactions = [r for r in self.reactions if not r.type=='MomXfer']

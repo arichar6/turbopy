@@ -218,7 +218,54 @@ class PoissonSolver1DRadial(ComputeTool):
         return I2 - I2[-1]
 
 
+class FiniteDifference(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.method = input_data["method"]
+        self.dr_centered = self.owner.grid.r[2:] - self.owner.grid.r[:-2]
+    
+    def setup_ddx(self):
+        assert (self.method in ["centered", "upwind_left"])
+        if self.method == "centered":
+            return self.centered_difference
+        if self.method == "upwind_left":
+            return self.upwind_left
+    
+    def centered_difference(self, y):
+        d = self.owner.grid.generate_field()
+        d[1:-1] = (y[2:] - y[:-2]) / self.dr_centered
+        return d
+    
+    def upwind_left(self, y):
+        d = self.owner.grid.generate_field()
+        d[1:] = (y[1:] - y[:-1]) / self.owner.grid.cell_widths
+        return d
+        
+
+class BorisPush(ComputeTool):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.c2 = (2.9979e8)**2
+
+    def push(self, position, momentum, charge, mass, E, B):
+        dt = self.owner.clock.dt
+
+        vminus = momentum + dt * E * charge / 2
+        m1 = np.sqrt(mass**2 + np.dot(momentum, momentum)/self.c2)
+
+        t = dt * B * charge / m1 / 2
+        s = 2 * t / (1 + np.dot(t, t))
+        
+        vprime = vminus + np.cross(vminus, t)
+        vplus = vminus + np.cross(vprime, s)
+        momentum[:] = vplus + dt * E * charge / 2
+        m2 = np.sqrt(mass**2 + np.dot(momentum, momentum)/self.c2)
+        position[:] = position + dt * momentum / m2
+
+
+ComputeTool.register("BorisPush", BorisPush)
 ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
+ComputeTool.register("FiniteDifference", FiniteDifference)
 
 
 class SimulationClock:
@@ -264,30 +311,64 @@ class Diagnostic(DynamicFactory):
         pass
 
 
+class CSVDiagnosticOutput:
+    def __init__(self, filename, diagnostic_size):
+        self.filename = filename
+        self.buffer = np.zeros(diagnostic_size)
+        self.file = None
+        self.buffer_index = 0
+        
+    def append(self, data):
+        self.buffer[self.buffer_index, :] = data
+        self.buffer_index += 1
+    
+    def finalize(self):
+        self.file = open(self.filename, 'wb')
+        np.savetxt(self.file, self.buffer, delimiter=",")
+        self.file.close()
+
+
 class PointDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.location = input_data["location"]
         self.field_name = input_data["field"]
         self.output = input_data["output"] # "stdout"
-        self.idx = 0
+        self.get_value = None
         self.field = None
-        
+                
     def diagnose(self):
-        self.output_function(self.field[self.idx])
+        self.output_function(self.get_value(self.field))
 
     def inspect_resource(self, resource):
         if self.field_name in resource:
             self.field = resource[self.field_name]
-    
+
+    def print_diagnose(self, data):
+        print(data)
+        
     def initialize(self):
-        # check that point is within grid
-        # set idx to the closest index point
+        # set up function to interpolate the field value
+        self.get_value = self.owner.grid.create_interpolator(self.location)
         
         # setup output method
-        self.output_function = print
+        functions = {"stdout": self.print_diagnose,
+                     "csv": self.csv_diagnose,
+                     }
+        self.output_function = functions[self.input_data["output"]]
 
+        if self.input_data["output"] == "csv":
+            diagnostic_size = (self.owner.clock.num_steps + 1, 1)
+            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
 
+    def csv_diagnose(self, data):
+        self.csv.append(data)
+
+    def finalize(self):
+        self.diagnose()
+        if self.input_data["output"] == "csv":
+            self.csv.finalize()
+            
 class FieldDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -297,40 +378,37 @@ class FieldDiagnostic(Diagnostic):
         self.output = input_data["output"] # "stdout"
         self.field = None
         
-        self.file = None
-        
     def diagnose(self):
-        self.output_function(self.field[:,self.component])
+        if len(self.field.shape) > 1:
+            self.output_function(self.field[:,self.component])
+        else:
+            self.output_function(self.field)
 
     def inspect_resource(self, resource):
         if self.field_name in resource:
             self.field = resource[self.field_name]
     
-    def print_diag(self, data):
+    def print_diagnose(self, data):
         print(self.field_name, data)
         
     def initialize(self):
         # setup output method
-        functions = {"stdout": self.print_diag,
-                     "csv": self.write_to_csv,
+        functions = {"stdout": self.print_diagnose,
+                     "csv": self.csv_diagnose,
                      }
         self.output_function = functions[self.input_data["output"]]
         if self.input_data["output"] == "csv":
-            self.outputbuffer = np.zeros((
-                        self.owner.clock.num_steps+1,
-                        self.owner.grid.num_points
-                        ))
+            diagnostic_size = (self.owner.clock.num_steps+1,
+                               self.owner.grid.num_points)
+            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
     
-    def write_to_csv(self, data):
-        i = self.owner.clock.this_step
-        self.outputbuffer[i,:] = data[:]
+    def csv_diagnose(self, data):
+        self.csv.append(data)
     
     def finalize(self):
         self.diagnose()
         if self.input_data["output"] == "csv":
-            self.file = open(self.input_data["filename"], 'wb')
-            np.savetxt(self.file, self.outputbuffer, delimiter=",")
-            self.file.close()
+            self.csv.finalize()
 
 
 class GridDiagnostic(Diagnostic):
@@ -366,10 +444,29 @@ class Grid:
         self.cell_edges = self.r
         self.cell_centers = (self.r[1:] + self.r[:-1])/2
         self.cell_widths = (self.r[1:] - self.r[:-1])
+        self.dr = self.cell_widths[0] # only good for uniform grids!
     
     def generate_field(self, num_components=1):
-        return np.zeros((self.num_points, num_components))
+        return np.squeeze(np.zeros((self.num_points, num_components)))
     
     def generate_linear(self):
         return np.linspace(0, 1, self.num_points)
-        
+    
+    def create_interpolator(self, r0):
+        # Return a function which linearly interpolates any field on this grid, to the point x
+        assert (r0 >= self.r_min), "Requested point is not in the grid"
+        assert (r0 <= self.r_max), "Requested point is not in the grid"
+        i, = np.where( (r0 - self.dr < self.r) & (self.r < r0 + self.dr))
+        assert (len(i) in [1, 2]), "Error finding requested point in the grid"
+        if len(i) == 1:
+            return lambda y: y[i]
+        if len(i) == 2:
+            # linearly interpolate
+            def interpval(yvec):
+                rvals = self.r[i]
+                y = yvec[i]
+                return y[0] + (r0 - rvals[0]) * (y[1]-y[0])/(rvals[1]-rvals[0])
+            return interpval
+            
+
+
