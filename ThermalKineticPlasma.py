@@ -1,8 +1,29 @@
 from turbopy import Simulation, Module, Diagnostic
 import numpy as np
-from chemistry import Species, Chemistry
 
 from pathlib import Path
+class KineticSpecies:
+    def __init__(self,name,charge,mass):
+        self.name = name
+        self.mass = mass
+        self.charge = charge
+        self.weights = np.ones(0)
+        self.positions = np.zeros(0)
+        self.momenta = np.zeros(0)
+        self.energies = np.zeros(0)
+    
+    def __repr__(self):
+        return '(' + ', '.join(["Species: " + self.name,
+                          "Mass: " + str(self.mass),
+                          "Charge: " + str(self.charge)]) + ')'
+    
+    def __eq__(self, other):
+        if self.name == other.name:
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(self.name)
 
 class ThermalKineticPlasma(Module):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -15,19 +36,19 @@ class ThermalKineticPlasma(Module):
         name = self.input_data['species_name']
         charge = self.input_data['species_charge']
         mass   = self.input_data['species_mass']
-        self.species = {"name":name,"charge":charge,"mass":mass,"weights":np.zeros(0),"position":np.zeros(0),"momentum":np.zeros(0),"energy":np.zeros(0)}
+#        self.species = {"name":name,"charge":charge,"mass":mass,"weights":np.zeros(0),"position":np.zeros(0),"momentum":np.zeros(0),"energy":np.zeros(0)}
+        self.species = KineticSpecies(name,charge,mass)
 
     def initialize(self):
         self.grid = self.owner.grid.r
         self.dt =  self.owner.clock.dt
         print("dt:",self.dt)
         print(self.grid)
-        weights  = np.ones(10)
-        position = np.zeros(10)
-        momentum = np.zeros(10)
-        energy   = np.zeros(10)
-        AddList = {"weights":weights,"position":position,"momentum":momentum,"energy":energy}
-        self.AddParticle(AddList)
+
+        self.species.weights=np.ones(10)
+        self.species.positions=np.zeros((10,3))
+        self.species.momenta=np.zeros((10,3))
+        self.species.energies=np.zeros(10)
         
     def inspect_resource(self, resource):
         if "FieldModel:E" in resource:
@@ -46,10 +67,19 @@ class ThermalKineticPlasma(Module):
         """
         Take a particle list and perform a Lorentz-force update
         """
-        E = self.interpolator(self.grid, self.E)
-        B = self.interpolator(self.grid, self.B)
-        x = self.species['position']
-        self.particle_pusher(self.species['position'], self.species['momentum'], self.species['charge'], self.species['mass'], E(x), B(x)) 
+        x = self.species.positions
+        r = x[:,0]
+        p = self.species.momenta
+
+        Efld = self.interpolator(self.grid, self.E)
+        Ez = Efld(r)
+        Evec = np.array([np.zeros_like(Ez),np.zeros_like(Ez),Ez]).T
+
+        Bfld = self.interpolator(self.grid, self.B)
+        Bth = Bfld(r)
+        Bvec = np.array([np.zeros_like(Bth),Bth,np.zeros_like(Bth)]).T
+
+        self.particle_pusher(x, p, self.species.charge, self.species.mass, Evec, Bvec) 
 
     def AllocateCurrent(self):
         """
@@ -63,19 +93,19 @@ class ThermalKineticPlasma(Module):
         """
         print("EnforceBCs does not do anything yet")
                 
-    def AddParticle(self, List):
-        """
-        Add particles to the list of active particles
-        """
-        for key in List.keys():
-            self.species[key] = np.append(self.species[key],List[key])
-        print("species",self.species)
+    # def AddParticle(self, List):
+    #     """
+    #     Add particles to the list of active particles
+    #     """
+    #     for key in List.keys():
+    #         self.species[key] = np.append(self.species[key],List[key])
+    #     print("species",self.species)
 
-    def KillParticle(self):
-        """
-        Remove particles from the list of active particles
-        """
-        print("this function does not do anything yet")
+    #   def KillParticle(self):
+    #     """
+    #     Remove particles from the list of active particles
+    #     """
+    #     print("this function does not do anything yet")
 
     # def AdaptiveParticleManagement(self):
     #     """

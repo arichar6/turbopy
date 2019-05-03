@@ -251,16 +251,16 @@ class BorisPush(ComputeTool):
         dt = self.owner.clock.dt
 
         vminus = momentum + dt * E * charge / 2
-        m1 = np.sqrt(mass**2 + np.dot(momentum, momentum)/self.c2)
+        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum,axis=-1)/self.c2)
 
-        t = dt * B * charge / m1 / 2
-        s = 2 * t / (1 + np.dot(t, t))
+        t = dt * B * charge / m1[:,np.newaxis] / 2
+        s = 2 * t / (1 + np.sum(t*t,axis=-1)[:,np.newaxis])
         
         vprime = vminus + np.cross(vminus, t)
         vplus = vminus + np.cross(vprime, s)
         momentum[:] = vplus + dt * E * charge / 2
-        m2 = np.sqrt(mass**2 + np.dot(momentum, momentum)/self.c2)
-        position[:] = position + dt * momentum / m2
+        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum,axis=-1)/self.c2)
+        position[:] = position + dt * momentum / m2[:,np.newaxis]
         
 class Interpolators(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
