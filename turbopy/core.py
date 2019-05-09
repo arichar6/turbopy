@@ -4,6 +4,8 @@
 #
 import numpy as np
 import scipy.interpolate as interpolate
+from scipy import sparse
+
 
 class Simulation:
     """
@@ -221,14 +223,13 @@ class PoissonSolver1DRadial(ComputeTool):
 class FiniteDifference(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.method = input_data["method"]
-        self.dr_centered = self.owner.grid.r[2:] - self.owner.grid.r[:-2]
+        self.dr = self.owner.grid.dr
     
     def setup_ddx(self):
-        assert (self.method in ["centered", "upwind_left"])
-        if self.method == "centered":
+        assert (self.input_data["method"] in ["centered", "upwind_left"])
+        if self.input_data["method"] == "centered":
             return self.centered_difference
-        if self.method == "upwind_left":
+        if self.input_data["method"] == "upwind_left":
             return self.upwind_left
     
     def centered_difference(self, y):
@@ -240,7 +241,52 @@ class FiniteDifference(ComputeTool):
         d = self.owner.grid.generate_field()
         d[1:] = (y[1:] - y[:-1]) / self.owner.grid.cell_widths
         return d
+
+    def radial_curl(self):
+        # FD matrix for (rB)'/r = (1/r)(d/dr)(rB)
+        N = self.owner.grid.num_points
+        g = 1/(2.0 * self.dr)
+        col_below = np.zeros(N)
+        col_diag = np.zeros(N)
+        col_above = np.zeros(N)
+        col_below[:-1] = -g * (self.owner.grid.r[:-1]/self.owner.grid.r[1:])
+        col_above[1:] = g * (self.owner.grid.r[1:]/self.owner.grid.r[:-1])
+        # set boundary conditions
+        # At r=0, use B~linear, and B=0.
+        col_above[1] = 2.0 / self.dr     # for col_above, the first element is dropped
+        # At r=Rw, use rB~const?
+        col_diag[-1] = 1.0 / self.dr     # for col_below, the last element is dropped
+        col_below[-2] = 2.0 * col_below[-1]
+        # set main columns for finite difference derivative
+        D = sparse.dia_matrix( ([col_below, col_diag, col_above], [-1, 0, 1]), shape=(N, N) )
+        return D
+    
+    def del2_radial(self):
+        # FD matrix for (1/r)(d/dr)(r (df/dr))
+        N = self.owner.grid.num_points
+        g1 = 1/(2.0 * self.dr)
+        col_below = -g1 * np.ones(N)
+        col_above = g1 * np.ones(N)
         
+        col_above[1:] = self.owner.grid.r[:-1] * col_above[1:]
+        col_below[:-1] = self.owner.grid.r[1:] * col_below[:-1]
+        
+        # BC at r=0
+        col_above[1] = 0
+        
+        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))
+        
+        g2 = 1/(self.dr**2)
+        col_below = g2 * np.ones(N)
+        col_diag = g2 * np.ones(N)
+        col_above = g2 * np.ones(N)
+        # BC at r=0, first row of D
+        col_above[1] = 2 * col_above[1]
+        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
+        
+        # Need to set boundary conditions!
+        return D2
+        # return D1 + D2
 
 class BorisPush(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):

@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import interpolate
-
+import warnings
 
 class Species:
     def __init__(self, mass, charge, name):
@@ -24,10 +24,13 @@ class Species:
 
 class Reaction:
     def __init__(self, header, data):
-        self.ratedata = self.parse_table(data)
-        self.set_interpolating_function()
         self.reactants = []
         self.products = []
+        self.unique_species = []
+
+        self.ratedata = self.parse_table(data)
+        self.set_interpolating_function()
+        
         self.type = header['Type']
         self.delta_e = float(header['Delta(eV)'])
         self.identifier = header['Reaction']
@@ -44,10 +47,10 @@ class Reaction:
         return energy,rate
         
     def set_interpolating_function(self):
-        energy,rate = self.ratedata
+        energy, rate = self.ratedata
         x = np.log10(energy)
-        y = np.log10(rate+np.finfo(1.0).tiny)
-        self.LOG10_k = interpolate.interp1d(x,y,bounds_error=False,fill_value=[y[0]])
+        y = np.log10(rate + np.finfo(1.0).tiny)
+        self.LOG10_k = interpolate.interp1d(x, y, bounds_error=False, fill_value=[y[0]])
         return
         
     def get_rate_constant(self, energy):
@@ -71,6 +74,8 @@ class Reaction:
             m  = self.AMU*float(m)
             q  = self.echarge*float(q)
             self.products.append(Species(m, q, name))
+        
+        self.unique_species = set(self.reactants + self.products)
 
     def __eq__(self, other):
         if self.identifier == other.identifier:
@@ -79,47 +84,40 @@ class Reaction:
 
     def __hash__(self):
         return hash(self.identifier)
-        
+
+
+
 class Chemistry:
     def __init__(self,RateFileList):
-        self.RX_list = []
-        self.reactions = self.CreateChemistry(RateFileList)
-        print(self.reactions)
-        self.species = self.UniqueSpeciesList()
+        self.reactions = []
+        self.species = []
+        self.charged_species = []
+        
+        self.parse_rates(RateFileList)
+        
+        self.set_unique_species()
+        self.set_charged_species()
+
         self.momentum_transfer_reactions = [r for r in self.reactions if r.type=='MomXfer']
         self.excitation_reactions = [r for r in self.reactions if not r.type=='MomXfer']
-        self.charged_species = self.ChargedParticleSpecies()
         
-    def CreateChemistry(self,RateFileList):
-        chem = []
+    def parse_rates(self, RateFileList):
         for ratefile in RateFileList:
             reactions = parse_rate_file(ratefile)
             for reaction in reactions:
-                if not reaction in self.RX_list:
-                    chem.append(reaction)
-                    self.RX_list.append(reaction)
+                if not reaction in self.reactions:
+                    self.reactions.append(reaction)
                 else:
-                    print('Warning:  Duplicate reaction',r,' found')
-        return chem
+                    warnings.warn("Duplicate reaction " + r + " found")
         
-    def UniqueSpeciesList(self):
-        species=[]
-        for reaction in self.reactions:
-            for sp in reaction.reactants:
-                if not sp in species:
-                    species.append(sp)
-            for sp in reaction.products:
-                if not sp in species:
-                    species.append(sp)
-        return species
+    def set_unique_species(self):
+        self.species = set([s for r in self.reactions for s in r.unique_species])
         
-    def ChargedParticleSpecies(self):
-        list = []
-        for s in self.species:
-            if np.abs(s.charge)>0:
-                list.append(s)
-        return list
-                
+    def set_charged_species(self):
+        self.charged_species = [s for s in self.species if np.abs(s.charge) > 0]
+
+
+
 def read_section(fp):
     separator, section = None, []
     for line in fp:
