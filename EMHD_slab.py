@@ -3,12 +3,12 @@ import numpy as np
 import chemistry as ch
 # from chemistry import Species, Chemistry, Reaction, electron_species, N2_ground_state
 
-import scipy.special as special      # for i1, k1 modified Bessel functions
+import scipy.special as special  # for i1, k1 modified Bessel functions
 import scipy.integrate as integrate
 from scipy import sparse
+from scipy.sparse.linalg import spsolve
 
 from pathlib import Path
-
 
 
 class EMHD(Module):
@@ -17,11 +17,12 @@ class EMHD(Module):
     This module uses some approximations to the field equations,
     together with a fluid model for the plasma electrons.
     """
+
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.mu0 = 4 * np.pi * 1e-7
         m = ch.electron_species.mass * 1.6605402E-27
-        self.mu0e2om = self.mu0 * ch.echarge**2 / m
+        self.mu0e2om = self.mu0 * ch.echarge ** 2 / m
 
         # EMHD solves for B and Omega as functions of time
         self.B = owner.grid.generate_field(1)
@@ -34,10 +35,10 @@ class EMHD(Module):
         self.sigma = owner.grid.generate_field(1)
         self.Jold = owner.grid.generate_field(1)
         self.source = owner.grid.generate_field(1)
-        
+
         # Externally driven currents act a sources in the EMHD equation
-        self.dJdr = owner.grid.generate_field(1) # hack so that module can be used with no J_beam
-        self.J_beam = owner.grid.generate_field(1) # hack so that module can be used with no J_beam
+        self.dJdr = owner.grid.generate_field(1)  # hack so that module can be used with no J_beam
+        self.J_beam = owner.grid.generate_field(1)  # hack so that module can be used with no J_beam
 
         self.FluidModel = None
         self.electron_fluid = None
@@ -46,16 +47,16 @@ class EMHD(Module):
 
         self.get_rate = None
         self.plasma_chemistry = None
-                
+
     def initialize(self):
         self.dt = self.owner.clock.dt
         if ch.electron_species in self.FluidModel:
             self.electron_fluid = self.FluidModel[ch.electron_species]
         else:
             raise RuntimeError("Electron fluid species not found")
-        
-        self.construct_rad_diff()
-    
+
+        self.construct_curl_op()
+
     def inspect_resource(self, resource):
         if "CurrentSource:dJdr" in resource:
             self.dJdr = resource["CurrentSource:dJdr"]
@@ -78,30 +79,23 @@ class EMHD(Module):
 
     def update(self):
         m = ch.electron_species.mass * 1.6605402E-27
-        self.alpha[:] = ((self.mu0 * self.electron_fluid.density * ch.echarge**2) / m)**0.5
-        
+        self.alpha[:] = (self.mu0 * self.electron_fluid.density * ch.echarge ** 2) / m
+
         self.invert_omega()
         self.update_omega()
         self.update_current()
         self.update_efield()
-    
-    def invert_omega(self):
-        # B = I1 * int_R(K1 * source) + K1 * int_L(I1 * source)
-        
-        # alpha changes because density can change? Is this ok?
-        i1_grid = special.i1(self.owner.grid.r * self.alpha)
-        k1_grid = special.k1(self.owner.grid.r * self.alpha)
-        k1_grid[0] = 0  # artificially remove singularity at origin
 
+    def invert_omega(self):
         self.source[:] = self.Omega + self.mu0 * self.dJdr
-        I1 = i1_grid * integrate.cumtrapz((k1_grid * self.source)[::-1], dx=self.dr, initial=0)[::-1]
-        K1 = k1_grid * integrate.cumtrapz((i1_grid * self.source), dx=self.dr, initial=0)
-        
-        self.B[:] = I1 + K1
-        # self.B[0] = 1.5 * self.B[1] - 0.5 * self.B[2]
-        self.B[0] = 2 * self.B[1] - 1 * self.B[2]
-        self.B -= self.B[0]
-        
+
+        # Construct FD operator
+        D = self.construct_FD_op()
+        # Invert to get B
+        self.B[:] = spsolve(D, self.source)
+        # Apply BC
+        # self.B[0] = 2 * self.B[1] - 1 * self.B[2]
+
     def update_omega(self):
         energy = self.electron_fluid.nEnergy / self.electron_fluid.density
         nu = 0
@@ -113,50 +107,47 @@ class EMHD(Module):
         self.sigma[:] = mu0sigma / (self.mu0 * nu)
 
         self.Omega[:] += -nu * (self.Omega + self.alpha * self.B) * self.dt
-    
+
     def update_current(self):
         # compute the plasma current from the magnetic field
         # Jp = (1/mu0) (1/r)(d/dr)(rB) - Jb
 
         self.Jold[:] = self.J_plasma[:]
-        self.J_plasma[:] = -self.J_beam + (1/self.mu0) * (self.rad_diff @ self.B)
+        self.J_plasma[:] = -self.J_beam + (1 / self.mu0) * (self.curl_op @ self.B)
         # fix BC at r_wall?
-        self.J_plasma[-1] = 2 * self.J_plasma[-2] - self.J_plasma[-3]
+        # self.J_plasma[-1] = 2 * self.J_plasma[-2] - self.J_plasma[-3]
 
     def update_efield(self):
-        e2om = (self.mu0e2om/self.mu0) * self.electron_fluid.density
+        e2om = (self.mu0e2om / self.mu0) * self.electron_fluid.density
         # can compare these two terms to see which is larger...
         self.E[:] = ((self.J_plasma - self.Jold) / self.dt / e2om) + self.sigma * self.J_plasma
 
-    def construct_rad_diff(self):
-        # FD matrix for (rB)'/r = (1/r)(d/dr)(rB)
+    def construct_FD_op(self):
+        # FD matrix for (d/dx)^2 - a^2
         N = self.owner.grid.num_points
-        g = 1/(2.0 * self.dr)
-        col_below = np.zeros(N)
-        col_diag = np.zeros(N)
-        col_above = np.zeros(N)
-        col_below[:-1] = -g * (self.owner.grid.r[:-1]/self.owner.grid.r[1:])
-        col_above[1:] = g * (self.owner.grid.r[1:]/self.owner.grid.r[:-1])
-        # set boundary conditions
-        # At r=0, use B~linear, and B=0.
-        col_above[1] = 2.0 / self.dr
-        # At r=Rw, use rB~const?
-        col_diag[-1] = 1.0 / self.dr
-        col_below[-2] = 2.0 * col_below[-1]
-        # set main columns for finite difference derivative
-        D = sparse.dia_matrix( ([col_below, col_diag, col_above], [-1, 0, 1]), shape=(N, N) )
-        self.rad_diff = D
+        g = 1/self.dr**2
+        col = g * np.ones(N)
 
+        # set main columns for finite difference derivative
+        D = sparse.dia_matrix(([col, -2*col - self.alpha, col], [-1, 0, 1]), shape=(N, N))
+        return D.tocsr()
+
+    def construct_curl_op(self):
+        g = 1/(2*self.dr)
+        N = self.owner.grid.num_points
+        col = -g * np.ones(N)
+        self.curl_op = sparse.dia_matrix(([col, -col], [-1, 1]), shape=(N, N))
 
 
 class ConductivityModel(Module):
     """Solve the coupled field and electron momentum equations"""
+
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.mu0 = 4 * np.pi * 1e-7
         m = ch.electron_species.mass * 1.6605402E-27
-        self.mu0e2om = self.mu0 * ch.echarge**2 / m
-        
+        self.mu0e2om = self.mu0 * ch.echarge ** 2 / m
+
         self.B = owner.grid.generate_field(1)
         self.E = owner.grid.generate_field(1)
         self.sigma = owner.grid.generate_field(1)
@@ -169,21 +160,21 @@ class ConductivityModel(Module):
         self.solver = None
 
     def initialize(self):
-        self.solver = self.owner.find_tool_by_name(self.solver_name)        
-        #self.D2 = self.solver.del2_radial()
+        self.solver = self.owner.find_tool_by_name(self.solver_name)
+        # self.D2 = self.solver.del2_radial()
         ddr = self.solver.ddr()
         self.BC_right = self.solver.BC_right_extrap()
         self.BC_left_extrap = self.solver.BC_left_extrap()
         self.BC_left_avg = self.solver.BC_left_avg()
         self.BC_left_flat = self.solver.BC_left_flat()
-        
+
         r = self.owner.grid.r
-        rinv = (1/r)
+        rinv = (1 / r)
         rinv[0] = 0
-        
+
         def apply_del(x):
             inner = self.BC_right @ (r * (self.BC_left_extrap @ (ddr @ x)))
-            return self.BC_left_avg @ (self.BC_right @ ( rinv *  (ddr @ inner)))
+            return self.BC_left_avg @ (self.BC_right @ (rinv * (ddr @ inner)))
 
         self.del2 = apply_del
 
@@ -204,35 +195,34 @@ class ConductivityModel(Module):
             self.plasma_chemistry = resource["PlasmaChemistry"]
         if "PlasmaChemistry:rate_function" in resource:
             self.get_rate = resource["PlasmaChemistry:rate_function"]
-                                            
+
     def exchange_resources(self):
         self.publish_resource({"Fields:B": self.B})
         self.publish_resource({"Fields:E": self.E})
         self.publish_resource({"Fields:sigma": self.sigma})
         self.publish_resource({"Fields:J_plasma": self.J_plasma})
         self.publish_resource({"Fields:dJp_source": self.dJp_source})
-    
+
     def update(self):
-        energy = self.electron_fluid.nEnergy / self.electron_fluid.density 
+        energy = self.electron_fluid.nEnergy / self.electron_fluid.density
         nu = 0
         for RX in self.plasma_chemistry.momentum_transfer_reactions:
             nu += self.get_rate(RX, energy)
         nu = nu / self.electron_fluid.density
         mu0sigma = self.mu0e2om * self.electron_fluid.density
-        
-        self.dJp_source[:] = (1/mu0sigma) * self.del2(self.J_plasma * nu)
+
+        self.dJp_source[:] = (1 / mu0sigma) * self.del2(self.J_plasma * nu)
         dJ = self.BC_left_flat @ (self.dJp_source - self.dJdt)
         self.J_plasma[:] += (self.dJp_source - self.dJdt) * self.dt
-        
-        #self.dJp_source[:] = self.dJdt
-        
+
+        # self.dJp_source[:] = self.dJdt
+
         self.B[:] = np.cumsum(self.owner.grid.r * (self.J_plasma + self.J_beam))
         self.B[:] *= self.owner.grid.dr / self.owner.grid.r
         self.B[0] = 0
-        
+
         self.sigma[:] = mu0sigma / (self.mu0 * nu)
         self.E[:] = self.J_plasma / self.sigma
-        
 
 
 class FluidSpecies(ch.Species):
@@ -240,11 +230,10 @@ class FluidSpecies(ch.Species):
         self.generate_field = owner.grid.generate_field
         super().__init__(species.mass, species.charge, species.name)
         self.density = density * (1 + self.generate_field(1))
-        
+
     def mobilize(self, velocity=0, energy=0):
         self.nV = self.density * velocity * (1 + self.generate_field(1))
         self.nEnergy = self.density * energy * (1 + self.generate_field(1))
-
 
 
 class PlasmaChemistry(Module):
@@ -253,11 +242,12 @@ class PlasmaChemistry(Module):
     list_of_rate_files   - is the path to the chemistry file containing rate coefficients
     chem_dir             - is the path directory where gas_chemistry.py resides
     """
+
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        path_to_rates = self.input_data["RateFileList"] 
+        path_to_rates = self.input_data["RateFileList"]
         self.plasma_chemistry = ch.Chemistry(path_to_rates)
-        
+
         self.Fluid = None
 
         # Do something else here to set "weakly ionized" approximation?
@@ -265,14 +255,14 @@ class PlasmaChemistry(Module):
     def exchange_resources(self):
         self.publish_resource({"PlasmaChemistry": self.plasma_chemistry})
         self.publish_resource({"PlasmaChemistry:rate_function": self.get_reaction_rate})
-    
+
     def inspect_resource(self, resource):
         if "FluidModel" in resource:
             self.Fluid = resource["FluidModel"]
-        
+
     def get_reaction_rate(self, RX, energy):
         #  Get the rate coefficient
-        k = (1.0E-6) * RX.get_rate_constant(energy)                           
+        k = (1.0E-6) * RX.get_rate_constant(energy)
         # Determine the reaction rate from k
         density_product = 1
         for r in RX.reactants:
@@ -280,24 +270,24 @@ class PlasmaChemistry(Module):
             density_product = density_product * nA
         reaction_rate = density_product * k
         return reaction_rate
-        
+
     def update(self):
         pass
-
 
 
 class FluidElectrons(Module):
     """
     This is the module that takes care of updating the fluid momentum and energy equations
     """
+
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.plasma_chemistry = None
         self.electron_fluid = None
         self.J_plasma = None
-        
+
         self.get_rate = None
-    
+
     def inspect_resource(self, resource):
         if "PlasmaChemistry" in resource:
             self.plasma_chemistry = resource["PlasmaChemistry"]
@@ -309,10 +299,10 @@ class FluidElectrons(Module):
             self.E = resource["Fields:E"]
         if "PlasmaChemistry:rate_function" in resource:
             self.get_rate = resource["PlasmaChemistry:rate_function"]
-    
+
     def initialize(self):
         self.dt = self.owner.clock.dt
-        
+
         if ch.electron_species in self.FluidModel:
             self.electron_fluid = self.FluidModel[ch.electron_species]
         else:
@@ -320,7 +310,7 @@ class FluidElectrons(Module):
 
         ic = self.input_data["initial_conditions"]["e"]
         self.electron_fluid.mobilize(ic["velocity"], ic["energy"])
-            
+
     def update_energy(self):
         #  Take care of energy losses due to inelastic collisions
         energy = self.electron_fluid.nEnergy / self.electron_fluid.density
@@ -328,17 +318,17 @@ class FluidElectrons(Module):
             rx_rate = self.get_rate(RX, energy)
             deltaE = RX.delta_e
             self.electron_fluid.nEnergy += -rx_rate * deltaE * self.dt
-        
+
         # Update energy based on Ohmic heating
         # NB factor of electron charge is not here because units of energy are eV
-        self.electron_fluid.nEnergy += - self.electron_fluid.nV * self.E * self.dt        
+        self.electron_fluid.nEnergy += - self.electron_fluid.nV * self.E * self.dt
 
-        # What about changes in energy due to elastic scattering in COM frame, between 
+        # What about changes in energy due to elastic scattering in COM frame, between
         # species with very different mass?
 
     def update_momentum(self):
-        self.electron_fluid.nV = self.J_plasma / (-ch.echarge )
-    
+        self.electron_fluid.nV = self.J_plasma / (-ch.echarge)
+
     def update(self):
         # note that the momentum should be updated based on the solution from EMHD
         self.update_momentum()
@@ -347,12 +337,12 @@ class FluidElectrons(Module):
         self.update_energy()
 
 
-                
 class ThermalFluidPlasma(Module):
     """
-    This class handles the themal plasma (fluid-like) response that is used to 
-    compute plasma return currents.  
+    This class handles the themal plasma (fluid-like) response that is used to
+    compute plasma return currents.
     """
+
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.J = self.owner.grid.generate_field(1)  # only Jz for now
@@ -362,29 +352,29 @@ class ThermalFluidPlasma(Module):
         self.plasma_chemistry = None
         self.Fluid = {}
         self.get_rate = None
-        
+
     def initialize(self):
-        self.dt =  self.owner.clock.dt
+        self.dt = self.owner.clock.dt
         initial_conditions = self.input_data["initial_conditions"]
         self.set_initial_plasma_quantities(initial_conditions)
 
     def exchange_resources(self):
         self.publish_resource({"FluidModel": self.Fluid})
-        
+
     def inspect_resource(self, resource):
         if "PlasmaChemistry" in resource:
             self.plasma_chemistry = resource["PlasmaChemistry"]
         if "PlasmaChemistry:rate_function" in resource:
             self.get_rate = resource["PlasmaChemistry:rate_function"]
-            
+
     def set_initial_plasma_quantities(self, initial_conditions):
         """
-        This function determines the shape and size of the grid and sets the 
-        initial conditions for each specties accordingly. 
-        
+        This function determines the shape and size of the grid and sets the
+        initial conditions for each specties accordingly.
+
         initial_conditions   - a dictionary of species that have non-zero partial pressures at t=0
         """
-        NLoschmidt = 2.686E25                        # This is the number of molecules in an ideal gas at stp
+        NLoschmidt = 2.686E25  # This is the number of molecules in an ideal gas at stp
         IC_keys = initial_conditions.keys()
         for species in self.plasma_chemistry.species:
             if species.name in IC_keys:
@@ -399,34 +389,33 @@ class ThermalFluidPlasma(Module):
                 self.Fluid[species] = FluidSpecies(species, self.owner, density)
             else:
                 self.Fluid[species] = FluidSpecies(species, self.owner)
-        return 
-        
+        return
+
     def density_source(self, RX, energy):
         rx_rate = self.get_rate(RX, energy)
-        source={}
-        
+        source = {}
+
         for reactant in RX.reactants:
             source[reactant] = 0
         for product in RX.products:
-            source[product] =  0
+            source[product] = 0
 
         for reactant in RX.reactants:
             source[reactant] = source[reactant] - rx_rate
         for product in RX.products:
-            source[product] =  source[product]  + rx_rate
+            source[product] = source[product] + rx_rate
         return source
-    
+
     def update_densities(self, energy):
         # Take care of changes to the density due to exciation collisions which include ionization, recombination, etc
         for RX in self.plasma_chemistry.excitation_reactions:
             density_source_term = self.density_source(RX, energy)
             for species in density_source_term:
-                self.Fluid[species].density += density_source_term[species]*self.dt
+                self.Fluid[species].density += density_source_term[species] * self.dt
 
     def forward_Euler(self):
-        energy = self.Fluid[ch.electron_species].nEnergy/self.Fluid[ch.electron_species].density
+        energy = self.Fluid[ch.electron_species].nEnergy / self.Fluid[ch.electron_species].density
         self.update_densities(energy)
-
 
 
 class RigidBeamCurrentSource(Module):
@@ -437,7 +426,7 @@ class RigidBeamCurrentSource(Module):
         self.beam_radius = input_data["beam_radius"]
         self.rise_time = input_data["rise_time"]
 
-        self.J = owner.grid.generate_field(1)           # only Jz for now
+        self.J = owner.grid.generate_field(1)  # only Jz for now
         self.dJdr = owner.grid.generate_field(1)
         self.dJdt = owner.grid.generate_field(1)
         self.profile = owner.grid.generate_field(1)
@@ -446,45 +435,44 @@ class RigidBeamCurrentSource(Module):
         self.set_ddr_profile(input_data["profile"])
 
     def initialize(self):
-        self.dt =  self.owner.clock.dt
-                        
+        self.dt = self.owner.clock.dt
+
     def exchange_resources(self):
         self.publish_resource({"CurrentSource:J": self.J})
         self.publish_resource({"CurrentSource:dJdr": self.dJdr})
         self.publish_resource({"CurrentSource:dJdt": self.dJdt})
-    
+
     def set_profile(self, profile_type):
-        profiles = {"gaussian": lambda r: 
-                        self.peak_current * np.exp(-(r/self.beam_radius)**2),
+        profiles = {"gaussian": lambda r:
+        self.peak_current * np.exp(-(r / self.beam_radius) ** 2),
                     "uniform": lambda r:
-                        self.peak_current * (r < self.beam_radius),
+                    self.peak_current * (r < self.beam_radius),
                     "bennett": lambda r:
-                        self.peak_current * 1.0/(1.0+(r/self.beam_radius)**2)**2,
+                    self.peak_current * 1.0 / (1.0 + (r / self.beam_radius) ** 2) ** 2,
                     }
         try:
             self.profile[:] = profiles[profile_type](self.owner.grid.r)
         except KeyError:
             raise KeyError("Unknown profile type: {0}".format(profile_type))
-    
+
     def set_ddr_profile(self, profile_type):
-        profiles = {"gaussian": lambda r: 
-                        -2 * (r/self.beam_radius**2) * self.peak_current * np.exp(-(r/self.beam_radius)**2),
+        profiles = {"gaussian": lambda r:
+        -2 * (r / self.beam_radius ** 2) * self.peak_current * np.exp(-(r / self.beam_radius) ** 2),
                     }
         try:
             self.ddr_profile[:] = profiles[profile_type](self.owner.grid.r)
         except KeyError:
-            raise KeyError("Unknown profile type: {0}".format(profile_type))        
-            
+            raise KeyError("Unknown profile type: {0}".format(profile_type))
+
     def update(self):
         self.set_current_for_time(self.owner.clock.time)
-    
+
     def set_current_for_time(self, time):
         self.dJdt[:] = self.J[:]
-        self.J[:] = (time<2*self.rise_time)*np.sin(np.pi*time/self.rise_time/2)**2 * self.profile
-        self.dJdr[:] = (time<2*self.rise_time)*np.sin(np.pi*time/self.rise_time/2)**2 * self.ddr_profile
+        self.J[:] = (time < 2 * self.rise_time) * np.sin(np.pi * time / self.rise_time / 2) ** 2 * self.profile
+        self.dJdr[:] = (time < 2 * self.rise_time) * np.sin(np.pi * time / self.rise_time / 2) ** 2 * self.ddr_profile
         self.dJdt[:] -= self.J[:]
-        self.dJdt[:] = -self.dJdt[:]/self.dt
-        
+        self.dJdt[:] = -self.dJdt[:] / self.dt
 
 
 Module.register("ConductivityModel", ConductivityModel)
@@ -495,25 +483,24 @@ Module.register("RigidBeamCurrentSource", RigidBeamCurrentSource)
 Module.register("FluidElectrons", FluidElectrons)
 
 
-
 class FluidDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        
+
         self.component = input_data["component"]
         self.fluid_name = input_data["fluid_name"]
-        self.output = input_data["output"] 
+        self.output = input_data["output"]
         self.field = None
         self.units = "Diagnostic Units"
-        
+
     def diagnose(self):
-        if self.component=='energy':
-            self.output_function(self.fluid.nEnergy/self.fluid.density)
+        if self.component == 'energy':
+            self.output_function(self.fluid.nEnergy / self.fluid.density)
             self.units = "(eV)"
-        elif self.component=='Vz':
-            self.output_function(self.fluid.nV/self.fluid.density * 1E-7)
+        elif self.component == 'Vz':
+            self.output_function(self.fluid.nV / self.fluid.density * 1E-7)
             self.units = "(cm/ns)"
-        elif self.component=='density':      
+        elif self.component == 'density':
             self.output_function(self.fluid.density * 1E-6)
             self.units = "cm^-3"
         else:
@@ -523,58 +510,56 @@ class FluidDiagnostic(Diagnostic):
     def inspect_resource(self, resource):
         if "FluidModel" in resource:
             self.fluid_model = resource["FluidModel"]
-    
+
     def print_diagnose(self, data):
-        print(self.fluid_name, self.component,self.units, data)
-        
+        print(self.fluid_name, self.component, self.units, data)
+
     def initialize(self):
         # set up fluid
-        s_key = ch.Species(name=self.fluid_name,charge=0,mass=0)
+        s_key = ch.Species(name=self.fluid_name, charge=0, mass=0)
         if s_key in self.fluid_model:
             self.fluid = self.fluid_model[s_key]
         else:
-            raise RuntimeError("Fluid "+self.fluid_name+" not found in model")
-            
+            raise RuntimeError("Fluid " + self.fluid_name + " not found in model")
+
         # setup output method
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
         self.output_function = functions[self.input_data["output"]]
         if self.input_data["output"] == "csv":
-            diagnostic_size = (self.owner.clock.num_steps+1,
+            diagnostic_size = (self.owner.clock.num_steps + 1,
                                self.owner.grid.num_points)
             self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
-    
+
     def csv_diagnose(self, data):
         self.csv.append(data)
-    
+
     def finalize(self):
         self.diagnose()
         if self.input_data["output"] == "csv":
             self.csv.finalize()
 
-            
+
 Diagnostic.register("fluid", FluidDiagnostic)
-
-
 
 #  Chemistry files
 # p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
 p = Path('chemistry/N2_Rates_TT.txt')
-RateFileList=[p]
+RateFileList = [p]
 # Initial Conditions:
 #       All species that do not have a non-zero partial pressure at t=0 will be set to zero
 #
 
-initial_conditions={      'e':{'pressure':1e-5*1.0/760,'velocity':1e-6,'energy':0.1},
-                     'N2(X1)':{'pressure':1.0/760,'velocity':0.0,'energy':1.0/40.0}
-                     }                    
+initial_conditions = {'e': {'pressure': 1e-5 * 1.0 / 760, 'velocity': 1e-6, 'energy': 0.1},
+                      'N2(X1)': {'pressure': 1.0 / 760, 'velocity': 0.0, 'energy': 1.0 / 40.0}
+                      }
 
 end_time = 11E-9
 dt = 0.1E-9
-number_of_steps = int(end_time/dt)
-#number_of_steps = 200
-N_grid = 50
+number_of_steps = int(end_time / dt)
+# number_of_steps = 200
+N_grid = 100
 
 # sim_config = {"Modules": [
 #         {"name": "PlasmaChemistry",
@@ -592,142 +577,142 @@ N_grid = 50
 #         {"name": "FluidElectrons",
 #             "initial_conditions": initial_conditions
 #         },
-#         {"name": "ConductivityModel", 
+#         {"name": "ConductivityModel",
 #             "solver": "FiniteDifference"
 #         },
 #     ],
 
 sim_config = {"Modules": [
-        {"name": "PlasmaChemistry",
-            "RateFileList": RateFileList
-        },
-        {"name": "RigidBeamCurrentSource",
-             "peak_current": 1.0e5,
-             "beam_radius": 0.05,
-             "rise_time": 30.0e-9,
-             "profile": "gaussian",
-        },
-        {"name": "ThermalFluidPlasma",
-            "initial_conditions": initial_conditions
-        },
-        {"name": "FluidElectrons",
-            "initial_conditions": initial_conditions
-        },
-        {"name": "EMHD", 
-        },
-    ],
+    {"name": "PlasmaChemistry",
+     "RateFileList": RateFileList
+     },
+    {"name": "RigidBeamCurrentSource",
+     "peak_current": 1.0e5,
+     "beam_radius": 0.05,
+     "rise_time": 30.0e-9,
+     "profile": "gaussian",
+     },
+    {"name": "ThermalFluidPlasma",
+     "initial_conditions": initial_conditions
+     },
+    {"name": "FluidElectrons",
+     "initial_conditions": initial_conditions
+     },
+    {"name": "EMHD",
+     },
+],
     "Diagnostics": [
         {"type": "field",
-             "field": "Fields:sigma",
-             "output": "csv",
-             "filename": "beam_output/sigma.csv",
-             "component": 0,
+         "field": "Fields:sigma",
+         "output": "csv",
+         "filename": "beam_output/sigma.csv",
+         "component": 0,
          },
         {"type": "field",
-             "field": "Fields:Omega",
-             "output": "csv",
-             "filename": "beam_output/Omega.csv",
-             "component": 0,
-         },
-         {"type": "field",
-             "field": "Fields:E",
-             "output": "csv",
-             "filename": "beam_output/E.csv",
-             "component": 0,
+         "field": "Fields:Omega",
+         "output": "csv",
+         "filename": "beam_output/Omega.csv",
+         "component": 0,
          },
         {"type": "field",
-             "field": "Fields:B",
-             "output": "csv",
-             "filename": "beam_output/B.csv",
-             "component": 0,
+         "field": "Fields:E",
+         "output": "csv",
+         "filename": "beam_output/E.csv",
+         "component": 0,
          },
-         {"type": "field",
-             "field": "CurrentSource:J",
-             "output": "csv",
-             "filename": "beam_output/BeamCurrent.csv",
-             "component": 0,
+        {"type": "field",
+         "field": "Fields:B",
+         "output": "csv",
+         "filename": "beam_output/B.csv",
+         "component": 0,
          },
-         {"type": "field",
-             "field": "CurrentSource:dJdt",
-             "output": "csv",
-             "filename": "beam_output/BeamCurrentGradient.csv",
-             "component": 0,
+        {"type": "field",
+         "field": "CurrentSource:J",
+         "output": "csv",
+         "filename": "beam_output/BeamCurrent.csv",
+         "component": 0,
          },
-         {"type": "field",
-             "field": "Fields:dJp_source",
-             "output": "csv",
-             "filename": "beam_output/source.csv",
-             "component": 0,
+        {"type": "field",
+         "field": "CurrentSource:dJdt",
+         "output": "csv",
+         "filename": "beam_output/BeamCurrentGradient.csv",
+         "component": 0,
          },
-         {"type": "field",
-             "field": "Fields:J_plasma",
-             "output": "csv",
-             "filename": "beam_output/PlasmaCurrent.csv",
-             "component": 0,
+        {"type": "field",
+         "field": "Fields:dJp_source",
+         "output": "csv",
+         "filename": "beam_output/source.csv",
+         "component": 0,
          },
-        {"type": "fluid",
-             "fluid_name": "e",
-             "output": "csv",
-             "filename": "beam_output/ElectronDensity.csv",
-             "component": "density",
-         },
-        {"type": "fluid",
-             "fluid_name": "e",
-             "output": "csv",
-             "filename": "beam_output/Energy.csv",
-             "component": "energy",
+        {"type": "field",
+         "field": "Fields:J_plasma",
+         "output": "csv",
+         "filename": "beam_output/PlasmaCurrent.csv",
+         "component": 0,
          },
         {"type": "fluid",
-             "fluid_name": "e",
-             "output": "csv",
-             "filename": "beam_output/electron_Vz.csv",
-             "component": "Vz",
+         "fluid_name": "e",
+         "output": "csv",
+         "filename": "beam_output/ElectronDensity.csv",
+         "component": "density",
          },
         {"type": "fluid",
-             "fluid_name": "e",
-             "output": "csv",
-             "filename": "beam_output/electron_nV.csv",
-             "component": "nV",
+         "fluid_name": "e",
+         "output": "csv",
+         "filename": "beam_output/Energy.csv",
+         "component": "energy",
          },
         {"type": "fluid",
-             "fluid_name": "N2(X2:ion)",
-             "output": "csv",
-             "filename": "beam_output/N2(X2:ion)_Density.csv",
-             "component": "density",
+         "fluid_name": "e",
+         "output": "csv",
+         "filename": "beam_output/electron_Vz.csv",
+         "component": "Vz",
          },
         {"type": "fluid",
-             "fluid_name": "N2(X1)",
-             "output": "csv",
-             "filename": "beam_output/N2(X1)_Density.csv",
-             "component": "density",
+         "fluid_name": "e",
+         "output": "csv",
+         "filename": "beam_output/electron_nV.csv",
+         "component": "nV",
          },
         {"type": "fluid",
-             "fluid_name": "N2(Rot)",
-             "output": "csv",
-             "filename": "beam_output/N2(Rot)_Density.csv",
-             "component": "density",
+         "fluid_name": "N2(X2:ion)",
+         "output": "csv",
+         "filename": "beam_output/N2(X2:ion)_Density.csv",
+         "component": "density",
          },
         {"type": "fluid",
-             "fluid_name": "N2(v1)",
-             "output": "csv",
-             "filename": "beam_output/N2(v1)_Density.csv",
-             "component": "density",
+         "fluid_name": "N2(X1)",
+         "output": "csv",
+         "filename": "beam_output/N2(X1)_Density.csv",
+         "component": "density",
          },
-            {"type": "grid"},
+        {"type": "fluid",
+         "fluid_name": "N2(Rot)",
+         "output": "csv",
+         "filename": "beam_output/N2(Rot)_Density.csv",
+         "component": "density",
+         },
+        {"type": "fluid",
+         "fluid_name": "N2(v1)",
+         "output": "csv",
+         "filename": "beam_output/N2(v1)_Density.csv",
+         "component": "density",
+         },
+        {"type": "grid"},
     ],
     "Tools": [
         {"type": "FiniteDifference",
          }],
-    "Grid": {"N":N_grid ,
-             "r_min": 0, "r_max": 0.1,
-            },
+    "Grid": {"N": N_grid,
+             "r_min": -0.2, "r_max": 0.2,
+             },
     "Clock": {"start_time": 0,
-              "end_time":  end_time, 
+              "end_time": end_time,
               "num_steps": number_of_steps,
 
               }
-    }
-    
+}
+
 sim = Simulation(sim_config)
 #
 sim.run()

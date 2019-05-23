@@ -280,13 +280,96 @@ class FiniteDifference(ComputeTool):
         col_below = g2 * np.ones(N)
         col_diag = g2 * np.ones(N)
         col_above = g2 * np.ones(N)
+        
         # BC at r=0, first row of D
         col_above[1] = 2 * col_above[1]
         D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
         
         # Need to set boundary conditions!
-        return D2
-        # return D1 + D2
+        D = D1 + D2
+        return D
+    
+    def ddr(self):
+        # FD matrix for (d/dr) f
+        N = self.owner.grid.num_points
+        g1 = 1/(2.0 * self.dr)
+        col_below = -g1 * np.ones(N)
+        col_above = g1 * np.ones(N)
+        # BC at r=0
+        col_above[1] = 0
+        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))        
+        return D1
+
+    def BC_left_extrap(self):
+        N = self.owner.grid.num_points
+        col_diag = np.ones(N)
+        col_above = np.zeros(N)
+        col_above2 = np.zeros(N)
+        
+        # for col_above, the first element is dropped
+        col_diag[0] = 0
+        col_above[1] = 2
+        col_above2[2] = -1
+
+        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
+        return BC
+
+    def BC_left_avg(self):
+        N = self.owner.grid.num_points
+        col_diag = np.ones(N)
+        col_above = np.zeros(N)
+        col_above2 = np.zeros(N)
+        
+        # for col_above, the first element is dropped
+        col_diag[0] = 0
+        col_above[1] = 1.5
+        col_above2[2] = -0.5
+
+        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
+        return BC        
+
+    def BC_left_quad(self):
+        N = self.owner.grid.num_points
+        r = self.owner.grid.r
+        col_diag = np.ones(N)
+        col_above = np.zeros(N)
+        col_above2 = np.zeros(N)
+        
+        R2 = (r[1]**2 + r[2]**2)/(r[2]**2 - r[1]**2)/2
+        # for col_above, the first element is dropped
+        col_diag[0] = 0
+        col_above[1] = 0.5 + R2
+        col_above2[2] = 0.5 - R2
+
+        BC = sparse.dia_matrix(([col_diag, col_above, col_above2],
+                                [0, 1, 2]), shape=(N, N))
+        return BC
+    
+    def BC_left_flat(self):
+        N = self.owner.grid.num_points
+        col_diag = np.ones(N)
+        col_above = np.zeros(N)
+        col_above2 = np.zeros(N)
+        # for col_above, the first element is dropped
+        col_diag[0] = 0
+        col_above[1] = 1
+
+        BC = sparse.dia_matrix(([col_diag, col_above], [0,1]), shape=(N, N))
+        return BC        
+    
+    def BC_right_extrap(self):
+        N = self.owner.grid.num_points
+        col_diag = np.ones(N)
+        col_below = np.zeros(N)
+        col_below2 = np.zeros(N)
+        
+        # for col_below, the last element is dropped
+        col_diag[-1] = 0
+        col_below[-2] = 2
+        col_below2[-3] = -1
+
+        BC_right = sparse.dia_matrix(([col_below2, col_below, col_diag], [-2, -1, 0]), shape=(N, N))
+        return BC_right
 
 class BorisPush(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -492,7 +575,7 @@ class Grid:
         self.num_points = grid_data["N"]
         self.r_min = grid_data["r_min"]
         self.r_max = grid_data["r_max"]
-        self.r = self.r_min + self.r_max * self.generate_linear()
+        self.r = self.r_min + (self.r_max - self.r_min) * self.generate_linear()
         self.cell_edges = self.r
         self.cell_centers = (self.r[1:] + self.r[:-1])/2
         self.cell_widths = (self.r[1:] - self.r[:-1])
