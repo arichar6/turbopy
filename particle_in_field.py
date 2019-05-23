@@ -34,13 +34,13 @@ class EMWave(Module):
         self.k = self.omega / self.c
     
     def initialize(self):
-        phase = - self.omega * 0 + self.k * self.owner.grid.r
+        phase = - self.omega * 0 + self.k * (self.owner.grid.r - 0.5)
         self.E[:] = self.E0 * np.cos(2 * np.pi * phase)
         self.B[:] = self.B0 * np.sin(2 * np.pi * phase)
 
     def update(self):
         # need to apply the BC somehow
-        phase = - self.omega * self.owner.clock.time + self.k * self.owner.grid.r
+        phase = - self.omega * self.owner.clock.time + self.k * (self.owner.grid.r - 0.5)
         self.E[:] = self.E0 * np.cos(2 * np.pi * phase)
         self.B[:] = self.B0 * np.sin(2 * np.pi * phase)
         
@@ -151,7 +151,11 @@ sim_config = {"Modules": [
         {"type": "ParticleDiagnostic",
          "output": "csv",
          "component": "momentum",
-         "filename": "output/particle.csv"},
+         "filename": "output/particle_p.csv"},
+        {"type": "ParticleDiagnostic",
+         "output": "csv",
+         "component": "position",
+         "filename": "output/particle_x.csv"},
         {"type": "clock",
          "filename": "output/time.csv"},
         {"type": "grid",
