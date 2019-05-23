@@ -371,37 +371,42 @@ class FiniteDifference(ComputeTool):
         BC_right = sparse.dia_matrix(([col_below2, col_below, col_diag], [-2, -1, 0]), shape=(N, N))
         return BC_right
 
+
 class BorisPush(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.c2 = (2.9979e8)**2
+        self.c2 = 2.9979e8 ** 2
 
     def push(self, position, momentum, charge, mass, E, B):
         dt = self.owner.clock.dt
 
         vminus = momentum + dt * E * charge / 2
-        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum,axis=-1)/self.c2)
+        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
 
-        t = dt * B * charge / m1[:,np.newaxis] / 2
-        s = 2 * t / (1 + np.sum(t*t,axis=-1)[:,np.newaxis])
+        t = dt * B * charge / m1[:, np.newaxis] / 2
+        s = 2 * t / (1 + np.sum(t*t, axis=-1)[:, np.newaxis])
         
         vprime = vminus + np.cross(vminus, t)
         vplus = vminus + np.cross(vprime, s)
         momentum[:] = vplus + dt * E * charge / 2
-        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum,axis=-1)/self.c2)
-        position[:] = position + dt * momentum / m2[:,np.newaxis]
-        
+        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
+        position[:] = position + dt * momentum / m2[:, np.newaxis]
+
+
 class Interpolators(ComputeTool):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-    def interpolate1D(self,x,y,kind='linear'):
-        f = interpolate.interp1d(x,y,kind)
+
+    def interpolate1D(self, x, y, kind='linear'):
+        f = interpolate.interp1d(x, y, kind)
         return f
+
 
 ComputeTool.register("BorisPush", BorisPush)
 ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
 ComputeTool.register("FiniteDifference", FiniteDifference)
-ComputeTool.register("Interpolators",Interpolators)
+ComputeTool.register("Interpolators", Interpolators)
+
 
 class SimulationClock:
     def __init__(self, owner: Simulation, clock_data: dict):
@@ -450,7 +455,6 @@ class CSVDiagnosticOutput:
     def __init__(self, filename, diagnostic_size):
         self.filename = filename
         self.buffer = np.zeros(diagnostic_size)
-        self.file = None
         self.buffer_index = 0
         
     def append(self, data):
@@ -458,9 +462,8 @@ class CSVDiagnosticOutput:
         self.buffer_index += 1
     
     def finalize(self):
-        self.file = open(self.filename, 'wb')
-        np.savetxt(self.file, self.buffer, delimiter=",")
-        self.file.close()
+        with open(self.filename, 'wb') as f:
+            np.savetxt(f, self.buffer, delimiter=",")
 
 
 class PointDiagnostic(Diagnostic):
@@ -471,6 +474,8 @@ class PointDiagnostic(Diagnostic):
         self.output = input_data["output"] # "stdout"
         self.get_value = None
         self.field = None
+        self.output_function = None
+        self.csv = None
                 
     def diagnose(self):
         self.output_function(self.get_value(self.field))
@@ -503,7 +508,8 @@ class PointDiagnostic(Diagnostic):
         self.diagnose()
         if self.input_data["output"] == "csv":
             self.csv.finalize()
-            
+
+
 class FieldDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -557,16 +563,37 @@ class GridDiagnostic(Diagnostic):
         pass
 
     def initialize(self):
-        self.file = open(self.filename, 'wb')
-        np.savetxt(self.file, self.owner.grid.r, delimiter=",")
-        self.file.close()
-    
+        with open(self.filename, 'wb') as f:
+            np.savetxt(f, self.owner.grid.r, delimiter=",")
+
     def finalize(self):
-        pass                
+        pass
+
+
+class ClockDiagnostic(Diagnostic):
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.filename = "clock.csv"
+        if "filename" in input_data:
+            self.filename = input_data["filename"]
+        self.csv = None
+
+    def diagnose(self):
+        self.csv.append(self.owner.clock.time)
+
+    def initialize(self):
+        diagnostic_size = (self.owner.clock.num_steps + 1, 1)
+        self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
+
+    def finalize(self):
+        self.diagnose()
+        self.csv.finalize()
+
 
 Diagnostic.register("point", PointDiagnostic)
 Diagnostic.register("field", FieldDiagnostic)
 Diagnostic.register("grid", GridDiagnostic)
+Diagnostic.register("clock", ClockDiagnostic)
 
 
 class Grid:

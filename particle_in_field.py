@@ -1,6 +1,7 @@
 from turbopy import Simulation, Module, Diagnostic, CSVDiagnosticOutput
 import numpy as np
 
+
 class ElectricField(Module):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -19,6 +20,7 @@ class ElectricField(Module):
         
     def exchange_resources(self):
         self.publish_resource({"EMField:E": self.E})
+
 
 class EMWave(Module):
     def __init__(self, owner: Simulation, input_data: dict):
@@ -45,7 +47,8 @@ class EMWave(Module):
     def exchange_resources(self):
         self.publish_resource({"EMField:E": self.E})
         self.publish_resource({"EMField:B": self.B})
-        
+
+
 class ChargedParticle(Module):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -53,8 +56,8 @@ class ChargedParticle(Module):
         self.B = None
         self.x = input_data["position"]
         self.interp_field = owner.grid.create_interpolator(self.x)
-        self.position = np.zeros(3)
-        self.momentum = np.zeros(3)
+        self.position = np.zeros((1, 3))
+        self.momentum = np.zeros((1, 3))
         self.eoverm = 1.7588e11
         self.charge = 1.6022e-19
         self.mass = 9.1094e-31
@@ -77,6 +80,7 @@ class ChargedParticle(Module):
         if "EMField:B" in resource:
             self.B = resource["EMField:B"]
 
+
 class ParticleDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
@@ -88,7 +92,7 @@ class ParticleDiagnostic(Diagnostic):
             self.data = resource["ChargedParticle:" + self.component]
     
     def diagnose(self):
-        self.output_function(self.data[:])
+        self.output_function(self.data[0, :])
 
     def initialize(self):
         # setup output method
@@ -133,24 +137,28 @@ sim_config = {"Modules": [
          "component": 0,
          "field": "EMField:E",
          "output": "csv",
-         "filename": "efield.csv"},
+         "filename": "output/efield.csv"},
         {"type": "field",
          "component": 0,
          "field": "EMField:B",
          "output": "csv",
-         "filename": "bfield.csv"},
+         "filename": "output/bfield.csv"},
         {"type": "point",
          "field": "EMField:E",
          "location": 0.5,
          "output": "csv",
-         "filename": "e_0.5.csv"},
+         "filename": "output/e_0.5.csv"},
         {"type": "ParticleDiagnostic",
          "output": "csv",
          "component": "momentum",
-         "filename": "particle.csv"}
+         "filename": "output/particle.csv"},
+        {"type": "clock",
+         "filename": "output/time.csv"},
+        {"type": "grid",
+         "filename": "output/grid.csv"}
         ],
     "Grid": {"N": 100, "r_min": 0, "r_max": 1},
-    "Clock": {"start_time": 0, "end_time": 1e-7, "num_steps": 1000}
+    "Clock": {"start_time": 0, "end_time": 1e-8, "num_steps": 200}
     }
     
 sim = Simulation(sim_config)
