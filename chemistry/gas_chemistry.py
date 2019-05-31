@@ -44,7 +44,7 @@ class Reaction:
         temp = np.loadtxt(data, skiprows=1)
         energy = temp[:,0]
         rate =   temp[:,1]
-        return energy,rate
+        return energy, rate
         
     def set_interpolating_function(self):
         energy, rate = self.ratedata

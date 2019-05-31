@@ -5,7 +5,8 @@
 import numpy as np
 import scipy.interpolate as interpolate
 from scipy import sparse
-
+import qtoml as toml
+from pathlib import Path
 
 class Simulation:
     """
@@ -15,6 +16,11 @@ class Simulation:
     Based on the Simulation class in TurboWAVE
     """
     def __init__(self, input_data: dict):
+        # Check if the input is a filename of parameters to parse
+        if isinstance(input_data, str):
+            with open(input_data) as f:
+                input_data = toml.load(f)
+        
         self.modules = []
         self.compute_tools = []
         self.diagnostics = []
@@ -88,22 +94,42 @@ class Simulation:
     
     def read_tools_from_input(self):
         if "Tools" in self.input_data:
-            for t in self.input_data["Tools"]:
-                tool_class = ComputeTool.lookup(t["type"])
+            for tool_name, params in self.input_data["Tools"].items():
+                tool_class = ComputeTool.lookup(tool_name)
+                params["type"] = tool_name
                 # todo: somehow make tool names unique, or prevent more than one each
-                self.compute_tools.append(tool_class(owner=self, input_data=t))
+                self.compute_tools.append(tool_class(owner=self, input_data=params))
 
     def read_modules_from_input(self):
-        for module_data in self.input_data["Modules"]:
-            module_class = Module.lookup(module_data["name"])
+        for module_name, module_data in self.input_data["Modules"].items():
+            module_class = Module.lookup(module_name)
+            module_data["name"] = module_name
             self.modules.append(module_class(owner=self, input_data=module_data))
         self.sort_modules()
     
     def read_diagnostics_from_input(self):
         if "Diagnostics" in self.input_data:
-            for d in self.input_data["Diagnostics"]:
-                diagnostic_class = Diagnostic.lookup(d["type"])
-                self.diagnostics.append(diagnostic_class(owner=self, input_data=d))
+            # This dictionary has two types of keys:
+            #    keys that are valid diagnostic types
+            #    other keys, which should be passed along as "default" parameters
+            diags = {k:v for k,v in self.input_data["Diagnostics"].items() if Diagnostic.is_valid_name(k)}
+            params = {k:v for k,v in self.input_data["Diagnostics"].items() if not Diagnostic.is_valid_name(k)}
+            
+            # todo: implement a system for making default file names
+            if "directory" in params:
+                d = Path(params["directory"])
+                d.mkdir(parents=True, exist_ok=True)
+            
+            for diag_type, d in diags.items():
+                diagnostic_class = Diagnostic.lookup(diag_type)
+                if not type(d) is list:
+                    d = [d]
+                for di in d:
+                    # Values in di supersede values in params because of the order
+                    di = {**params, **di, "type": diag_type}
+                    if "directory" in di and "filename" in di:
+                        di["filename"] = str(Path(di["directory"]) / Path(di["filename"]))
+                    self.diagnostics.append(diagnostic_class(owner=self, input_data=di))
     
     def sort_modules(self):
         pass
@@ -120,7 +146,6 @@ class DynamicFactory:
     This base class provides a dynamic factory pattern functionality to classes 
     that derive from this.
     """
-    _registry = {}
     _factory_type_name = "Class"
     
     @classmethod
@@ -135,6 +160,10 @@ class DynamicFactory:
             return cls._registry[name]
         except KeyError:
             raise KeyError("{0} '{1}' not found in registry".format(cls._factory_type_name, name))
+    
+    @classmethod
+    def is_valid_name(cls, name):
+        return name in cls._registry
 
 
 
@@ -149,6 +178,7 @@ class Module(DynamicFactory):
     Make sure not to reinitialize, because other modules will be holding a reference to it.
     """
     _factory_type_name = "Module"
+    _registry = {}
     
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
@@ -191,6 +221,7 @@ class ComputeTool(DynamicFactory):
     which have implementations of numerical methods which can be shared between modules.
     """
     _factory_type_name = "Compute Tool"
+    _registry = {}
     
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
@@ -429,6 +460,7 @@ class SimulationClock:
 
 class Diagnostic(DynamicFactory):
     _factory_type_name = "Diagnostic"
+    _registry = {}
                 
     def __init__(self, owner: Simulation, input_data: dict):
         self.owner = owner
@@ -471,7 +503,7 @@ class PointDiagnostic(Diagnostic):
         super().__init__(owner, input_data)
         self.location = input_data["location"]
         self.field_name = input_data["field"]
-        self.output = input_data["output"] # "stdout"
+        self.output = input_data["output_type"] # "stdout"
         self.get_value = None
         self.field = None
         self.output_function = None
@@ -495,9 +527,9 @@ class PointDiagnostic(Diagnostic):
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
-        self.output_function = functions[self.input_data["output"]]
+        self.output_function = functions[self.input_data["output_type"]]
 
-        if self.input_data["output"] == "csv":
+        if self.input_data["output_type"] == "csv":
             diagnostic_size = (self.owner.clock.num_steps + 1, 1)
             self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
 
@@ -506,7 +538,7 @@ class PointDiagnostic(Diagnostic):
 
     def finalize(self):
         self.diagnose()
-        if self.input_data["output"] == "csv":
+        if self.input_data["output_type"] == "csv":
             self.csv.finalize()
 
 
@@ -516,10 +548,20 @@ class FieldDiagnostic(Diagnostic):
         
         self.component = input_data["component"]
         self.field_name = input_data["field"]
-        self.output = input_data["output"] # "stdout"
+        self.output = input_data["output_type"] # "stdout"
         self.field = None
-        
-    def diagnose(self):
+
+        self.dump_interval = None        
+        self.diagnose = self.do_diagnostic
+        self.diagnostic_size = None
+
+
+    def check_step(self):
+        if (self.owner.clock.time >= self.last_dump + self.dump_interval):
+            self.do_diagnostic()
+            self.last_dump = self.owner.clock.time
+    
+    def do_diagnostic(self):
         if len(self.field.shape) > 1:
             self.output_function(self.field[:,self.component])
         else:
@@ -533,31 +575,36 @@ class FieldDiagnostic(Diagnostic):
         print(self.field_name, data)
         
     def initialize(self):
+        self.diagnostic_size = (self.owner.clock.num_steps+1,
+                                self.owner.grid.num_points)
+        if "dump_interval" in self.input_data:
+            self.dump_interval = self.input_data["dump_interval"]
+            self.diagnose = self.check_step
+            self.last_dump = 0
+            self.diagnostic_size = (int(np.ceil(self.owner.clock.end_time/self.dump_interval)+1),
+                                    self.owner.grid.num_points)       
+    
         # setup output method
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
-        self.output_function = functions[self.input_data["output"]]
-        if self.input_data["output"] == "csv":
-            diagnostic_size = (self.owner.clock.num_steps+1,
-                               self.owner.grid.num_points)
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
+        self.output_function = functions[self.input_data["output_type"]]
+        if self.input_data["output_type"] == "csv":
+            self.csv = CSVDiagnosticOutput(self.input_data["filename"], self.diagnostic_size)
     
     def csv_diagnose(self, data):
         self.csv.append(data)
     
     def finalize(self):
-        self.diagnose()
-        if self.input_data["output"] == "csv":
+        self.do_diagnostic()
+        if self.input_data["output_type"] == "csv":
             self.csv.finalize()
 
 
 class GridDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.filename = "grid.csv"
-        if "filename" in input_data:
-            self.filename = input_data["filename"]
+        self.filename = input_data["filename"]
             
     def diagnose(self):
         pass
@@ -573,9 +620,7 @@ class GridDiagnostic(Diagnostic):
 class ClockDiagnostic(Diagnostic):
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.filename = "clock.csv"
-        if "filename" in input_data:
-            self.filename = input_data["filename"]
+        self.filename = input_data["filename"]
         self.csv = None
 
     def diagnose(self):

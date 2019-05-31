@@ -1,0 +1,123 @@
+[Tools]
+[Tools.FiniteDifference]
+
+[Grid]
+N = 200
+r_min = -0.2
+r_max = 0.2
+
+[Clock]
+start_time = 0.0
+end_time = 12.0E-9
+num_steps = 120
+
+[Modules]
+[Modules.PlasmaChemistry]
+    RateFile = "chemistry/N2_Rates_TT.txt"
+
+[Modules.RigidBeamCurrentSource]
+    peak_current = 1.0e5
+    beam_radius = 0.05
+    rise_time = 30.0e-9
+    profile = "gaussian"
+     
+[Modules.ThermalFluidPlasma]
+    [Modules.ThermalFluidPlasma.initial_conditions."e"]
+        pressure = 1.3158e-8   # 1e-5 * 1.0 / 760
+        velocity = 1e-6
+        energy = 0.1
+    [Modules.ThermalFluidPlasma.initial_conditions."N2(X1)"]
+        pressure = 1.3158e-3   # 1.0 / 760
+        velocity = 0.0
+        energy = 0.025
+
+[Modules.FluidElectrons]
+[Modules.EMHD]
+
+[Diagnostics]
+# add some default parameters
+directory = "beam_output/"
+output_type = "csv"
+component = 0
+dump_interval = 1.0e-9
+
+[Diagnostics.grid]
+filename = "grid.csv"
+[Diagnostics.clock]
+filename = "time.csv"
+
+[Diagnostics.PlasmaChemistry]
+
+# Field Diagnostics
+[[Diagnostics.field]]
+field = "Fields:sigma"
+filename = "sigma.csv"
+
+[[Diagnostics.field]]
+field = "Fields:Omega"
+filename = "Omega.csv"
+
+[[Diagnostics.field]]
+field = "Fields:E"
+filename = "E.csv"
+
+[[Diagnostics.field]]
+field = "Fields:B"
+filename = "B.csv"
+
+[[Diagnostics.field]]
+field = "CurrentSource:J"
+filename = "BeamCurrent.csv"
+
+[[Diagnostics.field]]
+field = "CurrentSource:dJdt"
+filename = "BeamCurrentGradient.csv"
+
+[[Diagnostics.field]]
+field = "Fields:dJp_source"
+filename = "source.csv"
+
+[[Diagnostics.field]]
+field = "Fields:J_plasma"
+filename = "PlasmaCurrent.csv"
+
+# Fluid Diagnostics
+[[Diagnostics.fluid]]
+fluid_name = "e"
+filename = "ElectronDensity.csv"
+component = "density"
+
+[[Diagnostics.fluid]]
+fluid_name = "e"
+filename = "Energy.csv"
+component = "energy"
+
+[[Diagnostics.fluid]]
+fluid_name = "e"
+filename = "electron_Vz.csv"
+component = "Vz"
+
+[[Diagnostics.fluid]]
+fluid_name = "e"
+filename = "electron_nV.csv"
+component = "nV"
+
+[[Diagnostics.fluid]]
+fluid_name = "N2(X2:ion)"
+filename = "N2(X2:ion)_Density.csv"
+component = "density"
+
+[[Diagnostics.fluid]]
+fluid_name = "N2(X1)"
+filename = "N2(X1)_Density.csv"
+component = "density"
+
+[[Diagnostics.fluid]]
+fluid_name = "N2(Rot)"
+filename = "N2(Rot)_Density.csv"
+component = "density"
+
+[[Diagnostics.fluid]]
+fluid_name = "N2(v1)"
+filename = "N2(v1)_Density.csv"
+component = "density"

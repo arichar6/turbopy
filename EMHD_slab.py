@@ -226,12 +226,15 @@ class ConductivityModel(Module):
 
 
 class FluidSpecies(ch.Species):
-    def __init__(self, species, owner, density=0):
+    def __init__(self, species, owner, density=0, initial_conditions={}):
         self.generate_field = owner.grid.generate_field
         super().__init__(species.mass, species.charge, species.name)
         self.density = density * (1 + self.generate_field(1))
+        self.initial_conditions = initial_conditions
 
-    def mobilize(self, velocity=0, energy=0):
+    def mobilize(self):
+        velocity = self.initial_conditions["velocity"]
+        energy = self.initial_conditions["energy"]
         self.nV = self.density * velocity * (1 + self.generate_field(1))
         self.nEnergy = self.density * energy * (1 + self.generate_field(1))
 
@@ -245,7 +248,7 @@ class PlasmaChemistry(Module):
 
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        path_to_rates = self.input_data["RateFileList"]
+        path_to_rates = [self.input_data["RateFile"]]
         self.plasma_chemistry = ch.Chemistry(path_to_rates)
 
         self.Fluid = None
@@ -308,8 +311,7 @@ class FluidElectrons(Module):
         else:
             raise RuntimeError("Electron fluid species not found")
 
-        ic = self.input_data["initial_conditions"]["e"]
-        self.electron_fluid.mobilize(ic["velocity"], ic["energy"])
+        self.electron_fluid.mobilize()
 
     def update_energy(self):
         #  Take care of energy losses due to inelastic collisions
@@ -383,10 +385,10 @@ class ThermalFluidPlasma(Module):
                 density = NLoschmidt * pressure
                 velocity = ic['velocity']
                 energy = ic['energy']
-                print("Pressure:", pressure)
-                print("Velocity:", velocity)
-                print("Energy:", energy)
-                self.Fluid[species] = FluidSpecies(species, self.owner, density)
+#                 print("Pressure:", pressure)
+#                 print("Velocity:", velocity)
+#                 print("Energy:", energy)
+                self.Fluid[species] = FluidSpecies(species, self.owner, density, ic)
             else:
                 self.Fluid[species] = FluidSpecies(species, self.owner)
         return
@@ -489,11 +491,20 @@ class FluidDiagnostic(Diagnostic):
 
         self.component = input_data["component"]
         self.fluid_name = input_data["fluid_name"]
-        self.output = input_data["output"]
+        self.output = input_data["output_type"]
         self.field = None
         self.units = "Diagnostic Units"
-
-    def diagnose(self):
+        
+        self.dump_interval = None        
+        self.diagnose = self.do_diagnostic
+        self.diagnostic_size = None
+        
+    def check_step(self):
+        if (self.owner.clock.time >= self.last_dump + self.dump_interval):
+            self.do_diagnostic()
+            self.last_dump = self.owner.clock.time
+    
+    def do_diagnostic(self):
         if self.component == 'energy':
             self.output_function(self.fluid.nEnergy / self.fluid.density)
             self.units = "(eV)"
@@ -515,6 +526,15 @@ class FluidDiagnostic(Diagnostic):
         print(self.fluid_name, self.component, self.units, data)
 
     def initialize(self):
+        self.diagnostic_size = (self.owner.clock.num_steps+1,
+                                self.owner.grid.num_points)
+        if "dump_interval" in self.input_data:
+            self.dump_interval = self.input_data["dump_interval"]
+            self.diagnose = self.check_step
+            self.last_dump = 0
+            self.diagnostic_size = (int(np.ceil(self.owner.clock.end_time/self.dump_interval)+1),
+                                    self.owner.grid.num_points)     
+
         # set up fluid
         s_key = ch.Species(name=self.fluid_name, charge=0, mass=0)
         if s_key in self.fluid_model:
@@ -526,193 +546,49 @@ class FluidDiagnostic(Diagnostic):
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
-        self.output_function = functions[self.input_data["output"]]
-        if self.input_data["output"] == "csv":
-            diagnostic_size = (self.owner.clock.num_steps + 1,
-                               self.owner.grid.num_points)
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
+        self.output_function = functions[self.input_data["output_type"]]
+        if self.input_data["output_type"] == "csv":
+            self.csv = CSVDiagnosticOutput(self.input_data["filename"], self.diagnostic_size)
 
     def csv_diagnose(self, data):
         self.csv.append(data)
 
     def finalize(self):
-        self.diagnose()
-        if self.input_data["output"] == "csv":
+        self.do_diagnostic()
+        if self.input_data["output_type"] == "csv":
             self.csv.finalize()
 
 
+class PlasmaChemistryDiagnostic(Diagnostic):
+    def diagnose(self):
+        pass
+        
+    def inspect_resource(self, resource):
+        if "PlasmaChemistry" in resource:
+            self.plasma_chemistry = resource["PlasmaChemistry"]
+    
+    def initialize(self):
+        dir = ""
+        if "directory" in self.input_data:
+            dir = self.input_data["directory"]
+        
+        p = Path(dir) / Path("chemistry")
+        p.mkdir(parents=True, exist_ok=True)
+        
+        # just do everything here once at the start
+        for RX in self.plasma_chemistry.reactions:
+            # dump the rate tables as csv...
+            rx_id = RX.identifier
+            energy, rate = RX.ratedata
+            
+            fname = str(Path(dir) / Path("chemistry") / Path("RX_"+rx_id+".csv"))
+            with open(fname, 'wb') as f:
+                np.savetxt(f, np.array([energy, rate]), delimiter=",")
+
+
 Diagnostic.register("fluid", FluidDiagnostic)
+Diagnostic.register("PlasmaChemistry", PlasmaChemistryDiagnostic)
 
-#  Chemistry files
-# p = Path('chemistry/N2_Rates_TT_wo_recombination.txt')
-p = Path('chemistry/N2_Rates_TT.txt')
-RateFileList = [p]
-# Initial Conditions:
-#       All species that do not have a non-zero partial pressure at t=0 will be set to zero
-#
-
-initial_conditions = {'e': {'pressure': 1e-5 * 1.0 / 760, 'velocity': 1e-6, 'energy': 0.1},
-                      'N2(X1)': {'pressure': 1.0 / 760, 'velocity': 0.0, 'energy': 1.0 / 40.0}
-                      }
-
-end_time = 11E-9
-dt = 0.1E-9
-number_of_steps = int(end_time / dt)
-# number_of_steps = 200
-N_grid = 100
-
-# sim_config = {"Modules": [
-#         {"name": "PlasmaChemistry",
-#             "RateFileList": RateFileList
-#         },
-#         {"name": "RigidBeamCurrentSource",
-#              "peak_current": 1.0e5,
-#              "beam_radius": 0.02,
-#              "rise_time": 30.0e-9,
-#              "profile": "gaussian",
-#         },
-#         {"name": "ThermalFluidPlasma",
-#             "initial_conditions": initial_conditions
-#         },
-#         {"name": "FluidElectrons",
-#             "initial_conditions": initial_conditions
-#         },
-#         {"name": "ConductivityModel",
-#             "solver": "FiniteDifference"
-#         },
-#     ],
-
-sim_config = {"Modules": [
-    {"name": "PlasmaChemistry",
-     "RateFileList": RateFileList
-     },
-    {"name": "RigidBeamCurrentSource",
-     "peak_current": 1.0e5,
-     "beam_radius": 0.05,
-     "rise_time": 30.0e-9,
-     "profile": "gaussian",
-     },
-    {"name": "ThermalFluidPlasma",
-     "initial_conditions": initial_conditions
-     },
-    {"name": "FluidElectrons",
-     "initial_conditions": initial_conditions
-     },
-    {"name": "EMHD",
-     },
-],
-    "Diagnostics": [
-        {"type": "field",
-         "field": "Fields:sigma",
-         "output": "csv",
-         "filename": "beam_output/sigma.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "Fields:Omega",
-         "output": "csv",
-         "filename": "beam_output/Omega.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "Fields:E",
-         "output": "csv",
-         "filename": "beam_output/E.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "Fields:B",
-         "output": "csv",
-         "filename": "beam_output/B.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "CurrentSource:J",
-         "output": "csv",
-         "filename": "beam_output/BeamCurrent.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "CurrentSource:dJdt",
-         "output": "csv",
-         "filename": "beam_output/BeamCurrentGradient.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "Fields:dJp_source",
-         "output": "csv",
-         "filename": "beam_output/source.csv",
-         "component": 0,
-         },
-        {"type": "field",
-         "field": "Fields:J_plasma",
-         "output": "csv",
-         "filename": "beam_output/PlasmaCurrent.csv",
-         "component": 0,
-         },
-        {"type": "fluid",
-         "fluid_name": "e",
-         "output": "csv",
-         "filename": "beam_output/ElectronDensity.csv",
-         "component": "density",
-         },
-        {"type": "fluid",
-         "fluid_name": "e",
-         "output": "csv",
-         "filename": "beam_output/Energy.csv",
-         "component": "energy",
-         },
-        {"type": "fluid",
-         "fluid_name": "e",
-         "output": "csv",
-         "filename": "beam_output/electron_Vz.csv",
-         "component": "Vz",
-         },
-        {"type": "fluid",
-         "fluid_name": "e",
-         "output": "csv",
-         "filename": "beam_output/electron_nV.csv",
-         "component": "nV",
-         },
-        {"type": "fluid",
-         "fluid_name": "N2(X2:ion)",
-         "output": "csv",
-         "filename": "beam_output/N2(X2:ion)_Density.csv",
-         "component": "density",
-         },
-        {"type": "fluid",
-         "fluid_name": "N2(X1)",
-         "output": "csv",
-         "filename": "beam_output/N2(X1)_Density.csv",
-         "component": "density",
-         },
-        {"type": "fluid",
-         "fluid_name": "N2(Rot)",
-         "output": "csv",
-         "filename": "beam_output/N2(Rot)_Density.csv",
-         "component": "density",
-         },
-        {"type": "fluid",
-         "fluid_name": "N2(v1)",
-         "output": "csv",
-         "filename": "beam_output/N2(v1)_Density.csv",
-         "component": "density",
-         },
-        {"type": "grid"},
-    ],
-    "Tools": [
-        {"type": "FiniteDifference",
-         }],
-    "Grid": {"N": N_grid,
-             "r_min": -0.2, "r_max": 0.2,
-             },
-    "Clock": {"start_time": 0,
-              "end_time": end_time,
-              "num_steps": number_of_steps,
-
-              }
-}
-
-sim = Simulation(sim_config)
-#
+input_file = "EMHD_slab.toml"
+sim = Simulation(input_file)
 sim.run()

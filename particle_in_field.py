@@ -99,14 +99,14 @@ class ParticleDiagnostic(Diagnostic):
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
-        self.output_function = functions[self.input_data["output"]]
-        if self.input_data["output"] == "csv":
+        self.output_function = functions[self.input_data["output_type"]]
+        if self.input_data["output_type"] == "csv":
             diagnostic_size = (self.owner.clock.num_steps + 1, 3)
             self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
 
     def finalize(self):
         self.diagnose()
-        if self.input_data["output"] == "csv":
+        if self.input_data["output_type"] == "csv":
             self.csv.finalize()
 
     def print_diagnose(self, data):
@@ -121,49 +121,7 @@ Module.register("ElectricField", ElectricField)
 Module.register("ChargedParticle", ChargedParticle)
 Diagnostic.register("ParticleDiagnostic", ParticleDiagnostic)
 
-sim_config = {"Modules": [
-        {"name": "EMWave",
-         "amplitude": 1,
-         "omega": 2e8},
-        {"name": "ChargedParticle",
-         "position": 0.5},         
-    ],
-    "Tools": [{"type": "FiniteDifference",
-               "method": "upwind_left"},
-              {"type": "BorisPush"}
-              ],
-    "Diagnostics": [
-        {"type": "field",
-         "component": 0,
-         "field": "EMField:E",
-         "output": "csv",
-         "filename": "output/efield.csv"},
-        {"type": "field",
-         "component": 0,
-         "field": "EMField:B",
-         "output": "csv",
-         "filename": "output/bfield.csv"},
-        {"type": "point",
-         "field": "EMField:E",
-         "location": 0.5,
-         "output": "csv",
-         "filename": "output/e_0.5.csv"},
-        {"type": "ParticleDiagnostic",
-         "output": "csv",
-         "component": "momentum",
-         "filename": "output/particle_p.csv"},
-        {"type": "ParticleDiagnostic",
-         "output": "csv",
-         "component": "position",
-         "filename": "output/particle_x.csv"},
-        {"type": "clock",
-         "filename": "output/time.csv"},
-        {"type": "grid",
-         "filename": "output/grid.csv"}
-        ],
-    "Grid": {"N": 100, "r_min": 0, "r_max": 1},
-    "Clock": {"start_time": 0, "end_time": 1e-8, "num_steps": 200}
-    }
+input_file = "particle_in_field.toml"
     
-sim = Simulation(sim_config)
+sim = Simulation(input_file)
 sim.run()
