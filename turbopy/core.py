@@ -3,10 +3,9 @@
 # Based on the structure of turboWAVE
 #
 import numpy as np
-import scipy.interpolate as interpolate
-from scipy import sparse
 import qtoml as toml
 from pathlib import Path
+
 
 class Simulation:
     """
@@ -166,7 +165,6 @@ class DynamicFactory:
         return name in cls._registry
 
 
-
 class Module(DynamicFactory):
     """
     This is the base class for all physics modules
@@ -231,213 +229,6 @@ class ComputeTool(DynamicFactory):
     def initialize(self):
         pass
 
-class PoissonSolver1DRadial(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.field = None
-        
-    def initialize(self):
-        self.field = self.owner.grid.generate_field(1)
-    
-    def solve(self, sources):
-        r = self.owner.grid.r
-        dr = np.mean(self.owner.grid.cell_widths)
-        I1 = np.cumsum(r * sources * dr)
-        integrand = I1 * dr / r
-        i0 = 2 * integrand[1] - integrand[2]   # linearly extrapolate to r = 0
-        integrand[0] = i0
-        integrand = integrand - i0     # add const of integr so derivative = 0 at r = 0
-        I2 = np.cumsum(integrand)
-        return I2 - I2[-1]
-
-
-class FiniteDifference(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.dr = self.owner.grid.dr
-    
-    def setup_ddx(self):
-        assert (self.input_data["method"] in ["centered", "upwind_left"])
-        if self.input_data["method"] == "centered":
-            return self.centered_difference
-        if self.input_data["method"] == "upwind_left":
-            return self.upwind_left
-    
-    def centered_difference(self, y):
-        d = self.owner.grid.generate_field()
-        d[1:-1] = (y[2:] - y[:-2]) / self.dr_centered
-        return d
-    
-    def upwind_left(self, y):
-        d = self.owner.grid.generate_field()
-        d[1:] = (y[1:] - y[:-1]) / self.owner.grid.cell_widths
-        return d
-
-    def radial_curl(self):
-        # FD matrix for (rB)'/r = (1/r)(d/dr)(rB)
-        N = self.owner.grid.num_points
-        g = 1/(2.0 * self.dr)
-        col_below = np.zeros(N)
-        col_diag = np.zeros(N)
-        col_above = np.zeros(N)
-        col_below[:-1] = -g * (self.owner.grid.r[:-1]/self.owner.grid.r[1:])
-        col_above[1:] = g * (self.owner.grid.r[1:]/self.owner.grid.r[:-1])
-        # set boundary conditions
-        # At r=0, use B~linear, and B=0.
-        col_above[1] = 2.0 / self.dr     # for col_above, the first element is dropped
-        # At r=Rw, use rB~const?
-        col_diag[-1] = 1.0 / self.dr     # for col_below, the last element is dropped
-        col_below[-2] = 2.0 * col_below[-1]
-        # set main columns for finite difference derivative
-        D = sparse.dia_matrix( ([col_below, col_diag, col_above], [-1, 0, 1]), shape=(N, N) )
-        return D
-    
-    def del2_radial(self):
-        # FD matrix for (1/r)(d/dr)(r (df/dr))
-        N = self.owner.grid.num_points
-        g1 = 1/(2.0 * self.dr)
-        col_below = -g1 * np.ones(N)
-        col_above = g1 * np.ones(N)
-        
-        col_above[1:] = self.owner.grid.r[:-1] * col_above[1:]
-        col_below[:-1] = self.owner.grid.r[1:] * col_below[:-1]
-        
-        # BC at r=0
-        col_above[1] = 0
-        
-        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))
-        
-        g2 = 1/(self.dr**2)
-        col_below = g2 * np.ones(N)
-        col_diag = g2 * np.ones(N)
-        col_above = g2 * np.ones(N)
-        
-        # BC at r=0, first row of D
-        col_above[1] = 2 * col_above[1]
-        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
-        
-        # Need to set boundary conditions!
-        D = D1 + D2
-        return D
-    
-    def ddr(self):
-        # FD matrix for (d/dr) f
-        N = self.owner.grid.num_points
-        g1 = 1/(2.0 * self.dr)
-        col_below = -g1 * np.ones(N)
-        col_above = g1 * np.ones(N)
-        # BC at r=0
-        col_above[1] = 0
-        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))        
-        return D1
-
-    def BC_left_extrap(self):
-        N = self.owner.grid.num_points
-        col_diag = np.ones(N)
-        col_above = np.zeros(N)
-        col_above2 = np.zeros(N)
-        
-        # for col_above, the first element is dropped
-        col_diag[0] = 0
-        col_above[1] = 2
-        col_above2[2] = -1
-
-        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
-        return BC
-
-    def BC_left_avg(self):
-        N = self.owner.grid.num_points
-        col_diag = np.ones(N)
-        col_above = np.zeros(N)
-        col_above2 = np.zeros(N)
-        
-        # for col_above, the first element is dropped
-        col_diag[0] = 0
-        col_above[1] = 1.5
-        col_above2[2] = -0.5
-
-        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
-        return BC        
-
-    def BC_left_quad(self):
-        N = self.owner.grid.num_points
-        r = self.owner.grid.r
-        col_diag = np.ones(N)
-        col_above = np.zeros(N)
-        col_above2 = np.zeros(N)
-        
-        R2 = (r[1]**2 + r[2]**2)/(r[2]**2 - r[1]**2)/2
-        # for col_above, the first element is dropped
-        col_diag[0] = 0
-        col_above[1] = 0.5 + R2
-        col_above2[2] = 0.5 - R2
-
-        BC = sparse.dia_matrix(([col_diag, col_above, col_above2],
-                                [0, 1, 2]), shape=(N, N))
-        return BC
-    
-    def BC_left_flat(self):
-        N = self.owner.grid.num_points
-        col_diag = np.ones(N)
-        col_above = np.zeros(N)
-        col_above2 = np.zeros(N)
-        # for col_above, the first element is dropped
-        col_diag[0] = 0
-        col_above[1] = 1
-
-        BC = sparse.dia_matrix(([col_diag, col_above], [0,1]), shape=(N, N))
-        return BC        
-    
-    def BC_right_extrap(self):
-        N = self.owner.grid.num_points
-        col_diag = np.ones(N)
-        col_below = np.zeros(N)
-        col_below2 = np.zeros(N)
-        
-        # for col_below, the last element is dropped
-        col_diag[-1] = 0
-        col_below[-2] = 2
-        col_below2[-3] = -1
-
-        BC_right = sparse.dia_matrix(([col_below2, col_below, col_diag], [-2, -1, 0]), shape=(N, N))
-        return BC_right
-
-
-class BorisPush(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.c2 = 2.9979e8 ** 2
-
-    def push(self, position, momentum, charge, mass, E, B):
-        dt = self.owner.clock.dt
-
-        vminus = momentum + dt * E * charge / 2
-        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
-
-        t = dt * B * charge / m1[:, np.newaxis] / 2
-        s = 2 * t / (1 + np.sum(t*t, axis=-1)[:, np.newaxis])
-        
-        vprime = vminus + np.cross(vminus, t)
-        vplus = vminus + np.cross(vprime, s)
-        momentum[:] = vplus + dt * E * charge / 2
-        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
-        position[:] = position + dt * momentum / m2[:, np.newaxis]
-
-
-class Interpolators(ComputeTool):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-
-    def interpolate1D(self, x, y, kind='linear'):
-        f = interpolate.interp1d(x, y, kind)
-        return f
-
-
-ComputeTool.register("BorisPush", BorisPush)
-ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
-ComputeTool.register("FiniteDifference", FiniteDifference)
-ComputeTool.register("Interpolators", Interpolators)
-
 
 class SimulationClock:
     def __init__(self, owner: Simulation, clock_data: dict):
@@ -446,9 +237,17 @@ class SimulationClock:
         self.time = self.start_time
         self.end_time = clock_data["end_time"]
         self.this_step = 0
-        self.num_steps = clock_data["num_steps"]
-        self.dt = ((clock_data["end_time"] - clock_data["start_time"]) /
+        
+        if "num_steps" in clock_data:
+            self.num_steps = clock_data["num_steps"]
+            self.dt = ((clock_data["end_time"] - clock_data["start_time"]) /
                         clock_data["num_steps"])
+        elif "dt" in clock_data:
+            self.dt = clock_data["dt"]
+            self.num_steps = (self.end_time - self.start_time) / self.dt
+            if not (self.num_steps % 1 == 0):
+                raise(RuntimeError("Simulation interval is not an integer multiple of timestep dt"))
+            self.num_steps = np.int(self.num_steps)
         
     def advance(self):
         self.this_step += 1
@@ -456,6 +255,61 @@ class SimulationClock:
     
     def is_running(self):
         return self.this_step < self.num_steps
+
+
+class Grid:
+    def __init__(self, grid_data: dict):
+        self.grid_data = grid_data
+        self.r_min = None
+        self.r_max = None
+        self.parse_grid_data()
+        
+        self.r = self.r_min + (self.r_max - self.r_min) * self.generate_linear()
+        self.cell_edges = self.r
+        self.cell_centers = (self.r[1:] + self.r[:-1])/2
+        self.cell_widths = (self.r[1:] - self.r[:-1])
+    
+    def parse_grid_data(self):
+        self.set_value_from_keys("r_min", {"min", "x_min", "r_min"})
+        self.set_value_from_keys("r_max", {"max", "x_max", "r_max"})
+        if "N" in self.grid_data:
+            self.num_points = self.grid_data["N"]
+            self.dr = (self.r_max - self.r_min)/(self.num_points - 1)
+        else:
+            self.set_value_from_keys("dr", {"dr", "dx"})
+            self.num_points = 1 + (self.r_max - self.r_min)/self.dr
+            if not ( self.num_points % 1 == 0 ):
+                raise(RuntimeError("Invalid grid spacing: configuration does not imply integer number of grid points"))
+            self.num_points = np.int(self.num_points)
+
+    def set_value_from_keys(self, var_name, options):
+        for name in options:
+            if name in self.grid_data:
+                setattr(self, var_name, self.grid_data[name])
+                return
+        raise(KeyError("Grid configuration for " + var_name + " not found."))
+                                    
+    def generate_field(self, num_components=1):
+        return np.squeeze(np.zeros((self.num_points, num_components)))
+    
+    def generate_linear(self):
+        return np.linspace(0, 1, self.num_points)
+    
+    def create_interpolator(self, r0):
+        # Return a function which linearly interpolates any field on this grid, to the point x
+        assert (r0 >= self.r_min), "Requested point is not in the grid"
+        assert (r0 <= self.r_max), "Requested point is not in the grid"
+        i, = np.where( (r0 - self.dr < self.r) & (self.r < r0 + self.dr))
+        assert (len(i) in [1, 2]), "Error finding requested point in the grid"
+        if len(i) == 1:
+            return lambda y: y[i]
+        if len(i) == 2:
+            # linearly interpolate
+            def interpval(yvec):
+                rvals = self.r[i]
+                y = yvec[i]
+                return y[0] + (r0 - rvals[0]) * (y[1]-y[0])/(rvals[1]-rvals[0])
+            return interpval
 
 
 class Diagnostic(DynamicFactory):
@@ -483,197 +337,7 @@ class Diagnostic(DynamicFactory):
         pass
 
 
-class CSVDiagnosticOutput:
-    def __init__(self, filename, diagnostic_size):
-        self.filename = filename
-        self.buffer = np.zeros(diagnostic_size)
-        self.buffer_index = 0
-        
-    def append(self, data):
-        self.buffer[self.buffer_index, :] = data
-        self.buffer_index += 1
-    
-    def finalize(self):
-        with open(self.filename, 'wb') as f:
-            np.savetxt(f, self.buffer, delimiter=",")
 
 
-class PointDiagnostic(Diagnostic):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.location = input_data["location"]
-        self.field_name = input_data["field"]
-        self.output = input_data["output_type"] # "stdout"
-        self.get_value = None
-        self.field = None
-        self.output_function = None
-        self.csv = None
-                
-    def diagnose(self):
-        self.output_function(self.get_value(self.field))
-
-    def inspect_resource(self, resource):
-        if self.field_name in resource:
-            self.field = resource[self.field_name]
-
-    def print_diagnose(self, data):
-        print(data)
-        
-    def initialize(self):
-        # set up function to interpolate the field value
-        self.get_value = self.owner.grid.create_interpolator(self.location)
-        
-        # setup output method
-        functions = {"stdout": self.print_diagnose,
-                     "csv": self.csv_diagnose,
-                     }
-        self.output_function = functions[self.input_data["output_type"]]
-
-        if self.input_data["output_type"] == "csv":
-            diagnostic_size = (self.owner.clock.num_steps + 1, 1)
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
-
-    def csv_diagnose(self, data):
-        self.csv.append(data)
-
-    def finalize(self):
-        self.diagnose()
-        if self.input_data["output_type"] == "csv":
-            self.csv.finalize()
-
-
-class FieldDiagnostic(Diagnostic):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        
-        self.component = input_data["component"]
-        self.field_name = input_data["field"]
-        self.output = input_data["output_type"] # "stdout"
-        self.field = None
-
-        self.dump_interval = None        
-        self.diagnose = self.do_diagnostic
-        self.diagnostic_size = None
-
-
-    def check_step(self):
-        if (self.owner.clock.time >= self.last_dump + self.dump_interval):
-            self.do_diagnostic()
-            self.last_dump = self.owner.clock.time
-    
-    def do_diagnostic(self):
-        if len(self.field.shape) > 1:
-            self.output_function(self.field[:,self.component])
-        else:
-            self.output_function(self.field)
-
-    def inspect_resource(self, resource):
-        if self.field_name in resource:
-            self.field = resource[self.field_name]
-    
-    def print_diagnose(self, data):
-        print(self.field_name, data)
-        
-    def initialize(self):
-        self.diagnostic_size = (self.owner.clock.num_steps+1,
-                                self.owner.grid.num_points)
-        if "dump_interval" in self.input_data:
-            self.dump_interval = self.input_data["dump_interval"]
-            self.diagnose = self.check_step
-            self.last_dump = 0
-            self.diagnostic_size = (int(np.ceil(self.owner.clock.end_time/self.dump_interval)+1),
-                                    self.owner.grid.num_points)       
-    
-        # setup output method
-        functions = {"stdout": self.print_diagnose,
-                     "csv": self.csv_diagnose,
-                     }
-        self.output_function = functions[self.input_data["output_type"]]
-        if self.input_data["output_type"] == "csv":
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], self.diagnostic_size)
-    
-    def csv_diagnose(self, data):
-        self.csv.append(data)
-    
-    def finalize(self):
-        self.do_diagnostic()
-        if self.input_data["output_type"] == "csv":
-            self.csv.finalize()
-
-
-class GridDiagnostic(Diagnostic):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.filename = input_data["filename"]
-            
-    def diagnose(self):
-        pass
-
-    def initialize(self):
-        with open(self.filename, 'wb') as f:
-            np.savetxt(f, self.owner.grid.r, delimiter=",")
-
-    def finalize(self):
-        pass
-
-
-class ClockDiagnostic(Diagnostic):
-    def __init__(self, owner: Simulation, input_data: dict):
-        super().__init__(owner, input_data)
-        self.filename = input_data["filename"]
-        self.csv = None
-
-    def diagnose(self):
-        self.csv.append(self.owner.clock.time)
-
-    def initialize(self):
-        diagnostic_size = (self.owner.clock.num_steps + 1, 1)
-        self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
-
-    def finalize(self):
-        self.diagnose()
-        self.csv.finalize()
-
-
-Diagnostic.register("point", PointDiagnostic)
-Diagnostic.register("field", FieldDiagnostic)
-Diagnostic.register("grid", GridDiagnostic)
-Diagnostic.register("clock", ClockDiagnostic)
-
-
-class Grid:
-    def __init__(self, grid_data: dict):
-        self.grid_data = grid_data
-        self.num_points = grid_data["N"]
-        self.r_min = grid_data["r_min"]
-        self.r_max = grid_data["r_max"]
-        self.r = self.r_min + (self.r_max - self.r_min) * self.generate_linear()
-        self.cell_edges = self.r
-        self.cell_centers = (self.r[1:] + self.r[:-1])/2
-        self.cell_widths = (self.r[1:] - self.r[:-1])
-        self.dr = self.cell_widths[0] # only good for uniform grids!
-    
-    def generate_field(self, num_components=1):
-        return np.squeeze(np.zeros((self.num_points, num_components)))
-    
-    def generate_linear(self):
-        return np.linspace(0, 1, self.num_points)
-    
-    def create_interpolator(self, r0):
-        # Return a function which linearly interpolates any field on this grid, to the point x
-        assert (r0 >= self.r_min), "Requested point is not in the grid"
-        assert (r0 <= self.r_max), "Requested point is not in the grid"
-        i, = np.where( (r0 - self.dr < self.r) & (self.r < r0 + self.dr))
-        assert (len(i) in [1, 2]), "Error finding requested point in the grid"
-        if len(i) == 1:
-            return lambda y: y[i]
-        if len(i) == 2:
-            # linearly interpolate
-            def interpval(yvec):
-                rvals = self.r[i]
-                y = yvec[i]
-                return y[0] + (r0 - rvals[0]) * (y[1]-y[0])/(rvals[1]-rvals[0])
-            return interpval
-            
 
 
