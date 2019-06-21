@@ -14,7 +14,7 @@ from setuptools import find_packages, setup, Command
 # Package meta-data.
 NAME = 'turbopy'
 DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, Module, Tool" class hierarchy.'
-URL = 'https://github.com/me/myproject'
+URL = ''
 EMAIL = 'steve.richardson@nrl.navy.mil'
 AUTHOR = 'Steve Richardson'
 REQUIRES_PYTHON = '>=3.6.0'
@@ -117,7 +117,7 @@ setup(
     classifiers=[
         # Trove classifiers
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
-        'License :: OSI Approved :: MIT License',
+        'License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.6',
