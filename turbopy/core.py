@@ -245,9 +245,9 @@ class SimulationClock:
         elif "dt" in clock_data:
             self.dt = clock_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
-            if not (self.num_steps % 1 == 0):
+            if not np.isclose(self.num_steps, np.rint(self.num_steps)):
                 raise(RuntimeError("Simulation interval is not an integer multiple of timestep dt"))
-            self.num_steps = np.int(self.num_steps)
+            self.num_steps = np.int(np.rint(self.num_steps))
         
     def advance(self):
         self.this_step += 1

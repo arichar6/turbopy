@@ -46,6 +46,15 @@ class FiniteDifference(ComputeTool):
         d[1:-1] = (y[2:] - y[:-2]) / self.dr_centered
         return d
     
+    def ddx(self):
+        N = self.owner.grid.num_points
+        g = 1/(2.0 * self.dr)
+        col_below = np.zeros(N) - g
+        col_above = np.zeros(N) + g
+        D = sparse.dia_matrix( ([col_below, col_above], [-1, 1]), shape=(N, N) )
+        return D
+        
+    
     def upwind_left(self, y):
         d = self.owner.grid.generate_field()
         d[1:] = (y[1:] - y[:-1]) / self.owner.grid.cell_widths
@@ -97,6 +106,22 @@ class FiniteDifference(ComputeTool):
         # Need to set boundary conditions!
         D = D1 + D2
         return D
+    
+    def del2(self):
+        # FD matrix for d2/dx2
+        N = self.owner.grid.num_points
+        
+        g2 = 1/(self.dr**2)
+        col_below = g2 * np.ones(N)
+        col_diag = g2 * np.ones(N)
+        col_above = g2 * np.ones(N)
+        
+        # BC at r=0, first row of D
+        col_above[1] = 2 * col_above[1]
+        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
+
+        return D2
+        
     
     def ddr(self):
         # FD matrix for (d/dr) f

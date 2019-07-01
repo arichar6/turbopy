@@ -79,6 +79,8 @@ class FieldDiagnostic(Diagnostic):
         self.last_dump = None
         self.diagnose = self.do_diagnostic
         self.diagnostic_size = None
+        
+        self.field_was_found = False
 
     def check_step(self):
         if self.owner.clock.time >= self.last_dump + self.dump_interval:
@@ -93,12 +95,15 @@ class FieldDiagnostic(Diagnostic):
 
     def inspect_resource(self, resource):
         if self.field_name in resource:
+            self.field_was_found = True
             self.field = resource[self.field_name]
     
     def print_diagnose(self, data):
         print(self.field_name, data)
         
     def initialize(self):
+        if not self.field_was_found:
+            raise(RuntimeError(f"Diagnostic field {self.field_name} was not found"))
         self.diagnostic_size = (self.owner.clock.num_steps+1,
                                 self.owner.grid.num_points)
         if "dump_interval" in self.input_data:
