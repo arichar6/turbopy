@@ -86,8 +86,8 @@ class FiniteDifference(ComputeTool):
         col_below = -g1 * np.ones(N)
         col_above = g1 * np.ones(N)
         
-        col_above[1:] = self.owner.grid.r[:-1] * col_above[1:]
-        col_below[:-1] = self.owner.grid.r[1:] * col_below[:-1]
+        col_above[1:] = col_above[1:] / self.owner.grid.r[:-1]
+        col_below[:-1] = col_below[:-1] / self.owner.grid.r[1:]
         
         # BC at r=0
         col_above[1] = 0

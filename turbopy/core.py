@@ -237,6 +237,9 @@ class SimulationClock:
         self.time = self.start_time
         self.end_time = clock_data["end_time"]
         self.this_step = 0
+        self.print_time = False
+        if "print_time" in clock_data:
+            self.print_time = clock_data["print_time"]
         
         if "num_steps" in clock_data:
             self.num_steps = clock_data["num_steps"]
@@ -252,6 +255,8 @@ class SimulationClock:
     def advance(self):
         self.this_step += 1
         self.time = self.start_time + self.dt * self.this_step
+        if self.print_time:
+            print(f"t = {self.time}")
     
     def is_running(self):
         return self.this_step < self.num_steps
@@ -268,6 +273,9 @@ class Grid:
         self.cell_edges = self.r
         self.cell_centers = (self.r[1:] + self.r[:-1])/2
         self.cell_widths = (self.r[1:] - self.r[:-1])
+        
+        self.r_inv = 1/self.r
+        self.r_inv[0] = 0
     
     def parse_grid_data(self):
         self.set_value_from_keys("r_min", {"min", "x_min", "r_min"})
