@@ -18,11 +18,12 @@ More Resources
 -   [TurboWAVE Documentation](https://turbowave.readthedocs.io)
 
 
-Using turboPy
--------------
+turboPy Conda environment
+-------------------------
 
--   Create a conda environment for turboPy: `conda create -n turbopy python=3.7`
--   Activate: `source activate turbopy`
--   Install additional requirements: `conda install numpy`, `conda install scipy`, `pip install qtoml`
--   Install turboPy into the environment (from the main folder where setup.py is): `pip install -e .`
+-   Create a conda environment for turboPy: `conda env create -f environment.yml`
+-   Activate: `conda activate turbopy`
+-   Install turboPy into the environment (from the main folder where setup.py is): 
+	- `pip install -e .` to install in editable mode (i.e. setuptools "develop mode" if you are modifying turboPy itself
+	- `pip install .` if you just plan to develop a code using the existing turboPy framework
 
