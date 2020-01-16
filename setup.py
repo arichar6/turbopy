@@ -13,7 +13,7 @@ from setuptools import find_packages, setup, Command
 
 # Package meta-data.
 NAME = 'turbopy'
-DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, Module, Tool" class hierarchy.'
+DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, PhysicsModule, Tool" class hierarchy.'
 URL = ''
 EMAIL = 'steve.richardson@nrl.navy.mil'
 AUTHOR = 'Steve Richardson'

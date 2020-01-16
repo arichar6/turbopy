@@ -24,7 +24,7 @@ class Simulation:
             with open(input_data) as f:
                 input_data = toml.load(f)
 
-        self.modules = []
+        self.physics_modules = []
         self.compute_tools = []
         self.diagnostics = []
 
@@ -51,20 +51,20 @@ class Simulation:
 
     def fundamental_cycle(self):
         """
-        Executes each diagnostic and module and advances the clock.
+        Executes each diagnostic and physics module and advances the clock.
         """
         for d in self.diagnostics:
             d.diagnose()
-        for m in self.modules:
+        for m in self.physics_modules:
             m.reset()
-        for m in self.modules:
+        for m in self.physics_modules:
             m.update()
         self.clock.advance()
 
     def prepare_simulation(self):
         """
         Prepares the simulation by reading the input and initializing
-        modules and diagnostics.
+        physics modules and diagnostics.
         """
         print("Reading Grid...")
         self.read_grid_from_input()
@@ -72,7 +72,7 @@ class Simulation:
         print("Reading Tools...")
         self.read_tools_from_input()
 
-        print("Reading Modules...")
+        print("Reading PhysicsModules...")
         self.read_modules_from_input()
 
         print("Reading Diagnostics...")
@@ -85,10 +85,10 @@ class Simulation:
         for t in self.compute_tools:
             t.initialize()
 
-        print("Initializing Modules...")
-        for m in self.modules:
+        print("Initializing PhysicsModules...")
+        for m in self.physics_modules:
             m.exchange_resources()
-        for m in self.modules:
+        for m in self.physics_modules:
             m.initialize()
 
         print("Initializing Diagnostics...")
@@ -118,10 +118,10 @@ class Simulation:
                 self.compute_tools.append(tool_class(owner=self, input_data=params))
 
     def read_modules_from_input(self):
-        for module_name, module_data in self.input_data["Modules"].items():
-            module_class = Module.lookup(module_name)
-            module_data["name"] = module_name
-            self.modules.append(module_class(owner=self, input_data=module_data))
+        for physics_module_name, physics_module_data in self.input_data["PhysicsModules"].items():
+            physics_module_class = PhysicsModule.lookup(physics_module_name)
+            physics_module_data["name"] = physics_module_name
+            self.physics_modules.append(physics_module_class(owner=self, input_data=physics_module_data))
         self.sort_modules()
 
     def read_diagnostics_from_input(self):
@@ -183,17 +183,17 @@ class DynamicFactory:
         return name in cls._registry
 
 
-class Module(DynamicFactory):
+class PhysicsModule(DynamicFactory):
     """
     This is the base class for all physics modules
-    Based on Module class in TurboWAVE
+    Based on PhysicsModule class in TurboWAVE
 
     Because python mutable/immutable is different than C++ pointers, the implementation 
     here is different. Here, a "resource" is a dictionary, and can have more than one 
     thing being shared. Note that the value stored in the dictionary needs to be mutable. 
-    Make sure not to reinitialize, because other modules will be holding a reference to it.
+    Make sure not to reinitialize, because other physics modules will be holding a reference to it.
     """
-    _factory_type_name = "Module"
+    _factory_type_name = "PhysicsModule"
     _registry = {}
 
     def __init__(self, owner: Simulation, input_data: dict):
@@ -202,8 +202,8 @@ class Module(DynamicFactory):
         self.input_data = input_data
 
     def publish_resource(self, resource: dict):
-        for module in self.owner.modules:
-            module.inspect_resource(resource)
+        for physics_module in self.owner.physics_modules:
+            physics_module.inspect_resource(resource)
         for diagnostic in self.owner.diagnostics:
             diagnostic.inspect_resource(resource)
 
@@ -216,7 +216,7 @@ class Module(DynamicFactory):
 
     def exchange_resources(self):
         """
-        This is the function where you call publish_resource, to tell other modules 
+        This is the function where you call publish_resource, to tell other physics modules 
         about data you want to share
         """
         pass
@@ -234,7 +234,7 @@ class Module(DynamicFactory):
 class ComputeTool(DynamicFactory):
     """
     This is the base class for compute tools. These are the compute-heavy functions,
-    which have implementations of numerical methods which can be shared between modules.
+    which have implementations of numerical methods which can be shared between physics modules.
     """
     _factory_type_name = "Compute Tool"
     _registry = {}

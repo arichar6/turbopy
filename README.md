@@ -1,7 +1,7 @@
 turboPy
 =======================
 
-A lightweight computational physics framework, based on the organization of turboWAVE. Implements a "Simulation, Module, Tool" class hierarchy.
+A lightweight computational physics framework, based on the organization of turboWAVE. Implements a "Simulation, PhysicsModule, Tool" class hierarchy.
 
 
 To Do
