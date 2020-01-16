@@ -29,3 +29,9 @@ turboPy Conda environment
 modifying turboPy itself: `pip install -e .` 
 	- If you just plan to develop a code using the existing turboPy framework: `pip install .` 
 
+
+turboPy development environment
+-------------------------------
+
+If using `pylint` (which you should!) add `variable-rgx=[a-z0-9_]{1,30}$` to your .pylintrc file
+to allow single character variable names.
