@@ -5,6 +5,9 @@ dependencies:
         - python=3.7
         - numpy
         - scipy
+        - pytest-runner
+        - pytest
+        - pytest-cov
         - pip
         - pip:
                 - qtoml
