@@ -4,8 +4,8 @@ Computational Physics Simulation Framework
 Based on the structure of turboWAVE
 """
 
-
 from pathlib import Path
+from abc import ABC, abstractmethod
 import numpy as np
 import qtoml as toml
 
@@ -18,6 +18,7 @@ class Simulation:
 
     Based on the Simulation class in TurboWAVE
     """
+
     def __init__(self, input_data: dict):
         # Check if the input is a filename of parameters to parse
         if isinstance(input_data, str):
@@ -114,7 +115,7 @@ class Simulation:
             for tool_name, params in self.input_data["Tools"].items():
                 tool_class = ComputeTool.lookup(tool_name)
                 params["type"] = tool_name
-                #TODO: somehow make tool names unique, or prevent more than one each
+                # TODO: somehow make tool names unique, or prevent more than one each
                 self.compute_tools.append(tool_class(owner=self, input_data=params))
 
     def read_modules_from_input(self):
@@ -129,8 +130,8 @@ class Simulation:
             # This dictionary has two types of keys:
             #    keys that are valid diagnostic types
             #    other keys, which should be passed along as "default" parameters
-            diags = {k:v for k,v in self.input_data["Diagnostics"].items() if Diagnostic.is_valid_name(k)}
-            params = {k:v for k,v in self.input_data["Diagnostics"].items() if not Diagnostic.is_valid_name(k)}
+            diags = {k: v for k, v in self.input_data["Diagnostics"].items() if Diagnostic.is_valid_name(k)}
+            params = {k: v for k, v in self.input_data["Diagnostics"].items() if not Diagnostic.is_valid_name(k)}
 
             # todo: implement a system for making default file names
             if "directory" in params:
@@ -158,12 +159,20 @@ class Simulation:
         return None
 
 
-class DynamicFactory:
+class DynamicFactory(ABC):
     """
     This base class provides a dynamic factory pattern functionality to classes
     that derive from this.
     """
-    _factory_type_name = "Class"
+    @property
+    @abstractmethod
+    def _factory_type_name(self):
+        pass
+
+    @property
+    @abstractmethod
+    def _registry(self):
+        pass
 
     @classmethod
     def register(cls, name_to_register, class_to_register):
@@ -186,14 +195,14 @@ class DynamicFactory:
 class PhysicsModule(DynamicFactory):
     """
     This is the base class for all physics modules
-    Based on PhysicsModule class in TurboWAVE
+    Based on Module class in TurboWAVE
 
     Because python mutable/immutable is different than C++ pointers, the implementation 
     here is different. Here, a "resource" is a dictionary, and can have more than one 
     thing being shared. Note that the value stored in the dictionary needs to be mutable. 
     Make sure not to reinitialize, because other physics modules will be holding a reference to it.
     """
-    _factory_type_name = "PhysicsModule"
+    _factory_type_name = "Physics Module"
     _registry = {}
 
     def __init__(self, owner: Simulation, input_data: dict):
@@ -262,12 +271,12 @@ class SimulationClock:
         if "num_steps" in clock_data:
             self.num_steps = clock_data["num_steps"]
             self.dt = ((clock_data["end_time"] - clock_data["start_time"]) /
-                        clock_data["num_steps"])
+                       clock_data["num_steps"])
         elif "dt" in clock_data:
             self.dt = clock_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
             if not np.isclose(self.num_steps, np.rint(self.num_steps)):
-                raise(RuntimeError("Simulation interval is not an integer multiple of timestep dt"))
+                raise (RuntimeError("Simulation interval is not an integer multiple of timestep dt"))
             self.num_steps = np.int(np.rint(self.num_steps))
 
     def advance(self):
@@ -285,28 +294,29 @@ class Grid:
         self.grid_data = grid_data
         self.r_min = None
         self.r_max = None
+        self.num_points = None
+        self.dr = None
         self.parse_grid_data()
 
         self.r = self.r_min + (self.r_max - self.r_min) * self.generate_linear()
         self.cell_edges = self.r
-        self.cell_centers = (self.r[1:] + self.r[:-1])/2
+        self.cell_centers = (self.r[1:] + self.r[:-1]) / 2
         self.cell_widths = (self.r[1:] - self.r[:-1])
         # This will give a divide-by-zero warning. I'm ok with that for now.
-        self.r_inv = 1/self.r
+        self.r_inv = 1 / self.r
         self.r_inv[0] = 0
-
 
     def parse_grid_data(self):
         self.set_value_from_keys("r_min", {"min", "x_min", "r_min"})
         self.set_value_from_keys("r_max", {"max", "x_max", "r_max"})
         if "N" in self.grid_data:
             self.num_points = self.grid_data["N"]
-            self.dr = (self.r_max - self.r_min)/(self.num_points - 1)
+            self.dr = (self.r_max - self.r_min) / (self.num_points - 1)
         else:
             self.set_value_from_keys("dr", {"dr", "dx"})
-            self.num_points = 1 + (self.r_max - self.r_min)/self.dr
-            if not ( self.num_points % 1 == 0 ):
-                raise(RuntimeError("Invalid grid spacing: configuration does not imply integer number of grid points"))
+            self.num_points = 1 + (self.r_max - self.r_min) / self.dr
+            if not (self.num_points % 1 == 0):
+                raise (RuntimeError("Invalid grid spacing: configuration does not imply integer number of grid points"))
             self.num_points = np.int(self.num_points)
 
     def set_value_from_keys(self, var_name, options):
@@ -314,7 +324,7 @@ class Grid:
             if name in self.grid_data:
                 setattr(self, var_name, self.grid_data[name])
                 return
-        raise(KeyError("Grid configuration for " + var_name + " not found."))
+        raise (KeyError("Grid configuration for " + var_name + " not found."))
 
     def generate_field(self, num_components=1):
         return np.squeeze(np.zeros((self.num_points, num_components)))
@@ -326,7 +336,7 @@ class Grid:
         # Return a function which linearly interpolates any field on this grid, to the point x
         assert (r0 >= self.r_min), "Requested point is not in the grid"
         assert (r0 <= self.r_max), "Requested point is not in the grid"
-        i, = np.where( (r0 - self.dr < self.r) & (self.r < r0 + self.dr))
+        i, = np.where((r0 - self.dr < self.r) & (self.r < r0 + self.dr))
         assert (len(i) in [1, 2]), "Error finding requested point in the grid"
         if len(i) == 1:
             return lambda y: y[i]
@@ -335,7 +345,8 @@ class Grid:
             def interpval(yvec):
                 rvals = self.r[i]
                 y = yvec[i]
-                return y[0] + (r0 - rvals[0]) * (y[1]-y[0])/(rvals[1]-rvals[0])
+                return y[0] + (r0 - rvals[0]) * (y[1] - y[0]) / (rvals[1] - rvals[0])
+
             return interpval
 
 
