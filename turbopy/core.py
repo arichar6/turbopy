@@ -178,6 +178,8 @@ class DynamicFactory(ABC):
     def register(cls, name_to_register, class_to_register):
         if name_to_register in cls._registry:
             raise ValueError("{0} '{1}' already registered".format(cls._factory_type_name, name_to_register))
+        if not issubclass(class_to_register, cls):
+            raise TypeError("{0} is not a subclass of {1}".format(class_to_register, cls))
         cls._registry[name_to_register] = class_to_register
 
     @classmethod
