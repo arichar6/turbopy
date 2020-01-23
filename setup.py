@@ -13,11 +13,11 @@ from setuptools import find_packages, setup, Command
 
 # Package meta-data.
 NAME = 'turbopy'
-DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, PhysicsModule, Tool" class hierarchy.'
+DESCRIPTION = 'A lightweight computational physics framework, which implements a "Simulation, PhysicsModule, ComputeTool" class hierarchy.'
 URL = ''
 EMAIL = 'steve.richardson@nrl.navy.mil'
 AUTHOR = 'Steve Richardson'
-REQUIRES_PYTHON = '>=3.6.0'
+REQUIRES_PYTHON = '>=3.7.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
@@ -103,9 +103,9 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    packages=find_packages(exclude=('tests',)),
+    # packages=find_packages(exclude=('tests',)),
     # If your package is a single module, use this instead of 'packages':
-    # py_modules=['mypackage'],
+    py_modules=['turbopy'],
 
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
@@ -113,14 +113,13 @@ setup(
     install_requires=REQUIRED,
     extras_require=EXTRAS,
     include_package_data=True,
-    license='MIT',
     classifiers=[
         # Trove classifiers
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
         'License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: Implementation :: CPython',
         'Programming Language :: Python :: Implementation :: PyPy'
     ],
