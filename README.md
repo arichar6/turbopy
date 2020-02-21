@@ -1,5 +1,6 @@
 turboPy
 =======================
+[![DOI](https://zenodo.org/badge/242016626.svg)](https://zenodo.org/badge/latestdoi/242016626)
 
 A lightweight computational physics framework, based on the organization of turboWAVE. Implements a "Simulation, PhysicsModule, ComputeTool" class hierarchy.
 
