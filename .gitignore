@@ -1,0 +1,5 @@
+.pytest_cache
+.coverage
+pytestdebug.log
+__pycache__/
+turbopy.egg-info/
