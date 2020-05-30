@@ -3,3 +3,4 @@
 pytestdebug.log
 __pycache__/
 turbopy.egg-info/
+.ipynb_checkpoints/
