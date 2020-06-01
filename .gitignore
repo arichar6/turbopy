@@ -1,6 +1,14 @@
+# pytest
 .pytest_cache
 .coverage
 pytestdebug.log
 __pycache__/
+
+# conda environment
 turbopy.egg-info/
+
+# Jupyter Notebooks
 .ipynb_checkpoints/
+
+# Sphinx
+_build/

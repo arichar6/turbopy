@@ -11,3 +11,6 @@ dependencies:
         - pip
         - pip:
                 - qtoml
+                - livereload
+                - formic2
+                - sphobjinv
