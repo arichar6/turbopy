@@ -1,7 +1,15 @@
 """
-Computational Physics Simulation Framework
+Core base classes of the turboPy framework
 
-Based on the structure of turboWAVE
+TODO: add extended summary  
+
+TODO: As appropriate, add some of the following sections
+
+* routine listings  
+* see also  
+* notes  
+* references  
+* examples  
 """
 
 from pathlib import Path
