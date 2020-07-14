@@ -1,15 +1,13 @@
-Welcome to turboPy's documentation!
-===================================
-
-core.py
--------
-.. automodule:: turbopy.core
-    :members:
+Manual for turboPy Framework
+============================
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
+   getting_started
+   tutorials
+   api
 
 
 Indices and tables
