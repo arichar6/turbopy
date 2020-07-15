@@ -60,6 +60,8 @@ intersphinx_mapping = {
     'numpy': ('http://docs.scipy.org/doc/numpy/', None)
 }
 
+master_doc = 'index'
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
