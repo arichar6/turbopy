@@ -32,13 +32,13 @@ release = 'v2020.02.21'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'numpydoc',
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
     'sphinx.ext.coverage',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx'
 ]
+# Might want to add 'numpydoc', but readthedocs doesn't like it
 
 master_doc = 'index'
 
