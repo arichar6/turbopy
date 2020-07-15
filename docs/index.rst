@@ -1,5 +1,5 @@
-Manual for turboPy Framework
-============================
+TurboPy: a framework for computational physics
+==============================================
 
 .. toctree::
    :maxdepth: 2
@@ -8,6 +8,10 @@ Manual for turboPy Framework
    getting_started
    tutorials
    api
+
+This should also include links to the GitHub repo for the core project, as well as for example turboPy apps.
+
+It should also include a reference to the paper which describes turboPy, and a suggested citation style.
 
 
 Indices and tables

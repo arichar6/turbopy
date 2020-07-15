@@ -1,19 +1,6 @@
 Getting Started
 ===============
 
-Here is some normal text
+Some details about how to get started using the turboPy framework.
 
-Section
--------
-
-*Italic* text
-
-Subsection
-^^^^^^^^^^
-
-**Bold** text
-
-Subsubsection
-"""""""""""""
-
-``Code sample``
+Should also include information about contributing back to the core turboPy project.

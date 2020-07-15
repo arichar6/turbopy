@@ -1,19 +1,4 @@
 Tutorials
 =========
 
-Here is some normal text
-
-Section
--------
-
-*Italic* text
-
-Subsection
-^^^^^^^^^^
-
-**Bold** text
-
-Subsubsection
-"""""""""""""
-
-``Code sample``
+This should describe how to setup and run the example turboPy "app" described in the paper.

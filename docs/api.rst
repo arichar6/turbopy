@@ -5,17 +5,20 @@ TurboPy API
 
 **Question:** Should we use ``autoclass`` instead of ``automodule`` in order to organize this API documentation how we want?
 
-core.py
--------
+Core framework classes
+----------------------
 .. automodule:: turbopy.core
     :members:
+    :show-inheritance:
 
-diagnostics.py
--------
+Diagnostic classes
+------------------
 .. automodule:: turbopy.diagnostics
     :members:
+    :show-inheritance:
 
-computetools.py
--------
+Compute tools
+-------------
 .. automodule:: turbopy.computetools
     :members:
+    :show-inheritance:
