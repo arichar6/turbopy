@@ -1,8 +1,3 @@
-.. turbopy documentation master file, created by
-   sphinx-quickstart on Mon Jun  1 10:35:45 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Welcome to turbopy's documentation!
 ===================================
 
@@ -10,7 +5,9 @@ Welcome to turbopy's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+More content will be added here in the near future.
 
+Follow along with development at https://github.com/NRL-Plasma-Physics-Division/turbopy
 
 Indices and tables
 ==================
