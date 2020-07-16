@@ -1,7 +1,9 @@
-# Computational Physics Simulation Framework
-#
-# Based on the structure of turboWAVE
-#
+"""
+Diagnostics module for the turboPy computational physics simulation framework.
+
+Based on the structure of turboWAVE.
+
+"""
 import numpy as np
 
 from .core import Diagnostic, Simulation
