@@ -10,6 +10,27 @@ import numpy as np
 import qtoml as toml
 
 
+def construct_simulation_from_toml(filename: str) -> Simulation:
+    """Construct a Simulation instance from a toml input file
+
+    Parameters
+    ----------
+    filename : `str`
+        The name of the file which contains the input specification, in
+        `toml` format.
+
+    Returns
+    -------
+    simulation_instance : `Simulation`
+        An instance of the Simulation class, initialized using the data
+        in the input file, which was converted into a python dictionary.
+    """
+    with open(input_data) as f:
+        input_data = toml.load(f)
+
+    return Simulation(input_data)
+
+
 class Simulation:
     """
     This Class "owns" all the physics modules, compute tools, and diagnostics.
@@ -20,11 +41,6 @@ class Simulation:
     """
 
     def __init__(self, input_data: dict):
-        # Check if the input is a filename of parameters to parse
-        if isinstance(input_data, str):
-            with open(input_data) as f:
-                input_data = toml.load(f)
-
         self.physics_modules = []
         self.compute_tools = []
         self.diagnostics = []
