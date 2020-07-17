@@ -3,32 +3,9 @@ Computational Physics Simulation Framework
 
 Based on the structure of turboWAVE
 """
-
 from pathlib import Path
 from abc import ABC, abstractmethod
 import numpy as np
-import qtoml as toml
-
-
-def construct_simulation_from_toml(filename: str) -> Simulation:
-    """Construct a Simulation instance from a toml input file
-
-    Parameters
-    ----------
-    filename : `str`
-        The name of the file which contains the input specification, in
-        `toml` format.
-
-    Returns
-    -------
-    simulation_instance : `Simulation`
-        An instance of the Simulation class, initialized using the data
-        in the input file, which was converted into a python dictionary.
-    """
-    with open(input_data) as f:
-        input_data = toml.load(f)
-
-    return Simulation(input_data)
 
 
 class Simulation:
