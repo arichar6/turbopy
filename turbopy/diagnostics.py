@@ -12,9 +12,11 @@ from .core import Diagnostic, Simulation
 
 
 class CSVDiagnosticOutput:
-    """Comma separated value (CSV) diagnostic
+    """Comma separated value (CSV) diagnostic output helper class
 
-    Provides a diagnostic for writing data to a file in CSV format.
+    Provides routines for writing data to a file in CSV format. This
+    class can be used by Diagnostics subclassses to handle output to
+    csv format.
 
     Parameters
     ----------
@@ -88,6 +90,7 @@ class PointDiagnostic(Diagnostic):
 
         if self.input_data["output_type"] == "csv":
             diagnostic_size = (self.owner.clock.num_steps + 1, 1)
+            # Use composition to provide csv i/o functionality
             self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
 
     def csv_diagnose(self, data):
