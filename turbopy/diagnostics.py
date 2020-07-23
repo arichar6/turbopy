@@ -92,7 +92,7 @@ class PointDiagnostic(Diagnostic):
         if self.input_data["output_type"] == "csv":
             diagnostic_size = (self.owner.clock.num_steps + 1, 1)
             # Use composition to provide csv i/o functionality
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
+            self.csv = CSVOutputUtility(self.input_data["filename"], diagnostic_size)
 
     def csv_diagnose(self, data):
         self.csv.append(data)
@@ -156,7 +156,7 @@ class FieldDiagnostic(Diagnostic):
                      }
         self.output_function = functions[self.input_data["output_type"]]
         if self.input_data["output_type"] == "csv":
-            self.csv = CSVDiagnosticOutput(self.input_data["filename"], self.diagnostic_size)
+            self.csv = CSVOutputUtility(self.input_data["filename"], self.diagnostic_size)
     
     def csv_diagnose(self, data):
         self.csv.append(data)
@@ -194,7 +194,7 @@ class ClockDiagnostic(Diagnostic):
 
     def initialize(self):
         diagnostic_size = (self.owner.clock.num_steps + 1, 1)
-        self.csv = CSVDiagnosticOutput(self.input_data["filename"], diagnostic_size)
+        self.csv = CSVOutputUtility(self.input_data["filename"], diagnostic_size)
 
     def finalize(self):
         self.diagnose()
