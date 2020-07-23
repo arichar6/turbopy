@@ -11,7 +11,7 @@ import numpy as np
 from .core import Diagnostic, Simulation
 
 
-class CSVDiagnosticOutput:
+class CSVOutputUtility:
     """Comma separated value (CSV) diagnostic output helper class
 
     Provides routines for writing data to a file in CSV format. This
