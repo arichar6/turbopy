@@ -58,29 +58,76 @@ class CSVOutputUtility:
         with open(self.filename, 'wb') as f:
             np.savetxt(f, self.buffer, delimiter=",")
 
-
 class PointDiagnostic(Diagnostic):
+    """
+    Parameters
+    ----------
+    owner : Simulation
+       Simulation object containing current object.
+    input_data : dict
+       Dictionary that contains information regarding location, field, and output type.
+
+    Attributes
+    ----------
+    location : str
+        Location.
+    field_name : str
+        Field name.
+    output : str
+        Output type.
+    get_value : function, None
+        Function to get value given the field.
+    field : None
+        Field as dictated by resource.
+    output_function : function, None
+        Function for assigned output method: standard output or csv.
+    csv : :class:'numpy.ndarray', None
+        numpy.ndarray being written as a csv file.
+    """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.location = input_data["location"]
         self.field_name = input_data["field"]
-        self.output = input_data["output_type"] # "stdout"
+        self.output = input_data["output_type"]  # "stdout"
         self.get_value = None
         self.field = None
         self.output_function = None
         self.csv = None
 
     def diagnose(self):
+        """
+        Run output function given the value of the field.
+        """
         self.output_function(self.get_value(self.field))
 
     def inspect_resource(self, resource):
+        """
+        Assign attribute field if field_name given in resource.
+
+        Parameters
+        ----------
+        resource : dict
+            Dictionary containing information of field_name to resource.
+        """
         if self.field_name in resource:
             self.field = resource[self.field_name]
 
     def print_diagnose(self, data):
+        """
+        Prints out data to standard output.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values.
+        """
         print(data)
 
     def initialize(self):
+        """
+        Initialize output function if provided as csv, and self.csv
+        as an instance of the :class: 'CSVOuputUtility' class.
+        """
         # set up function to interpolate the field value
         self.get_value = self.owner.grid.create_interpolator(self.location)
 
@@ -96,9 +143,19 @@ class PointDiagnostic(Diagnostic):
             self.csv = CSVOutputUtility(self.input_data["filename"], diagnostic_size)
 
     def csv_diagnose(self, data):
+        """
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values.
+        Adds 'data' onto csv file.
+        """
         self.csv.append(data)
 
     def finalize(self):
+        """
+        Write the CSV data to file if CSV is the proper output type.
+        """
         self.diagnose()
         if self.input_data["output_type"] == "csv":
             self.csv.finalize()
