@@ -1,15 +1,15 @@
 """
 Core base classes of the turboPy framework
 
-TODO: add extended summary  
+TODO: add extended summary
 
 TODO: As appropriate, add some of the following sections
 
-* routine listings  
-* see also  
-* notes  
-* references  
-* examples  
+* routine listings
+* see also
+* notes
+* references
+* examples
 """
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -306,9 +306,9 @@ class PhysicsModule(DynamicFactory):
     This is the base class for all physics modules
     Based on Module class in TurboWAVE
 
-    Because python mutable/immutable is different than C++ pointers, the implementation 
-    here is different. Here, a "resource" is a dictionary, and can have more than one 
-    thing being shared. Note that the value stored in the dictionary needs to be mutable. 
+    Because python mutable/immutable is different than C++ pointers, the implementation
+    here is different. Here, a "resource" is a dictionary, and can have more than one
+    thing being shared. Note that the value stored in the dictionary needs to be mutable.
     Make sure not to reinitialize it, because other physics modules will be holding a reference to it.
     """
     _factory_type_name = "Physics Module"
@@ -424,11 +424,31 @@ class SimulationClock:
 class Grid:
     """Grid class
 
-    Attributes
+    Parameters
     ----------
-    grid_data: dict
+    grid_data : dict
         Grid data.
 
+    Attributes
+    ----------
+    grid_data : dict
+        Grid data.
+    r_min: float, None
+        Min of the Grid range.
+    r_max : float, None
+        Max of the Grid range.
+    num_points: int, None
+        Number of points on Grid.
+    dr : float, None
+        Grid spacing.
+    r, cell_edges : :class:`numpy.ndarray`
+        Array of evenly spaced Grid values.
+    cell_centers : float
+        Value of the coordinate in the middle of each Grid cell.
+    cell_widths : float
+        Width of each cell in the Grid.
+    r_inv : float
+        Inverse of coordinate values at each Grid point, 1/:class:`Grid.r`.
     """
     def __init__(self, grid_data: dict):
         self.grid_data = grid_data
@@ -497,13 +517,46 @@ class Grid:
         raise (KeyError("Grid configuration for " + var_name + " not found."))
 
     def generate_field(self, num_components=1):
+        """Returns squeezed :class:`numpy.ndarray` of zeros with dimensions
+        :class:`Grid.num_points` and `num_components`.
+
+        Parameters
+        ----------
+        num_components : int, defaults to 1
+            Number of vector components at each point.
+        Returns
+        -------
+        :class:`numpy.ndarray`
+            Squeezed array of zeros.
+        """
         return np.squeeze(np.zeros((self.num_points, num_components)))
 
     def generate_linear(self):
+        """Returns :class:`numpy.ndarray` with :class:`Grid.num_points` evenly
+         spaced in the interval between 0 and 1.
+
+         Returns
+         -------
+         :class:`numpy.ndarray`
+            Evenly spaced array.
+         """
         return np.linspace(0, 1, self.num_points)
 
     def create_interpolator(self, r0):
-        # Return a function which linearly interpolates any field on this grid, to the point x
+        """Return a function which linearly interpolates any field on this grid,
+        to the point `r0`.
+
+        Parameters
+        ----------
+        r0 : float
+            The requested point on the grid.
+
+        Returns
+        -------
+        function
+            A function which takes a grid quantity `y` and returns the interpolated value
+            of `y` at the point `r0`.
+        """
         assert (r0 >= self.r_min), "Requested point is not in the grid"
         assert (r0 <= self.r_max), "Requested point is not in the grid"
         i, = np.where((r0 - self.dr < self.r) & (self.r < r0 + self.dr))
@@ -531,7 +584,7 @@ class Diagnostic(DynamicFactory):
     def inspect_resource(self, resource: dict):
         """Save references to data from other PhysicsModules
 
-        If your subclass needs the data described by the key, now's their chance to 
+        If your subclass needs the data described by the key, now's their chance to
         save a reference to the data
         """
         pass
