@@ -651,6 +651,27 @@ class Grid:
 
 
 class Diagnostic(DynamicFactory):
+    """Base diagnostic class.
+
+    Parameters
+    ----------
+    owner: Simulation
+        The Simulation object that owns this object
+    input_data: dict
+        Dictionary containing information about this diagnostic
+
+    Attributes
+    ----------
+    _factory_type_name: str
+        Type of DynamicFactory child class
+    _registry: dict
+        Registered derived Diagnostic classes
+    owner: Simulation
+        The Simulation object that contains this object
+    input_data: dict
+        Dictionary that contains information about this object such as its name
+    """
+
     _factory_type_name = "Diagnostic"
     _registry = {}
 
@@ -661,8 +682,13 @@ class Diagnostic(DynamicFactory):
     def inspect_resource(self, resource: dict):
         """Save references to data from other PhysicsModules
 
-        If your subclass needs the data described by the key, now's their chance to
-        save a reference to the data
+        If your subclass needs the data described by the key, now's their
+        chance to save a reference to the data
+
+        Parameters
+        ----------
+        resource: dict
+            A dictionary containing references to data shared by other PhysicsModules.
         """
         pass
 
@@ -670,6 +696,13 @@ class Diagnostic(DynamicFactory):
         """Perform diagnostic step
 
         This gets called on every step of the main simulation loop.
+
+        Raises
+        ------
+        NotImplementedError
+            Method or function hasn't been implemented yet. This is an abstract
+            base class. Derived classes must implement this method in order to
+            be a child class of :class:'Diagnostic'.
         """
         raise NotImplementedError
 
