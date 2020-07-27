@@ -408,6 +408,8 @@ class ComputeTool(DynamicFactory):
     ----------
     _registery : dict
         Registered derived ComputeTool classes.
+     _factory_type_name : str
+        Type of ComputeTool child class
     owner : :class:`Simulation`
         Simulation class that ComputeTool belongs to.
     input_data : dict
