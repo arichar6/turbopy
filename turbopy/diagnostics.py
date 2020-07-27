@@ -77,7 +77,7 @@ class PointDiagnostic(Diagnostic):
         Output type.
     get_value : function, None
         Function to get value given the field.
-    field : None
+    field : str, None
         Field as dictated by resource.
     output_function : function, None
         Function for assigned output method: standard output or csv.
@@ -144,11 +144,12 @@ class PointDiagnostic(Diagnostic):
 
     def csv_diagnose(self, data):
         """
+        Adds 'data' into csv output buffer.
+
         Parameters
         ----------
         data : :class:`numpy.ndarray`
             1D numpy array of values.
-        Adds 'data' onto csv file.
         """
         self.csv.append(data)
 
@@ -162,12 +163,41 @@ class PointDiagnostic(Diagnostic):
 
 
 class FieldDiagnostic(Diagnostic):
+    """
+    Parameters
+    ----------
+    owner : Simulation
+       Simulation object containing current object.
+    input_data : dict
+       Dictionary that contains information regarding location, field, and output type.
+
+    Attributes
+    ----------
+    component : str
+    field_name : str
+        Field.
+    output : str
+        Output type.
+    field : str, None
+        Field as dictated by resource.
+    dump_interval : SimulationClock, None
+        Time interval between two diagnostic runs.
+    last_dump : SimulationClock, None
+        Time of last diagnostic run.
+    diagnose : method
+        Run `do_diagnostic` or `check_step` method depending on configuration parameters.
+    diagnostic_size : (int, int), None
+        Size of data set to be written to CSV file. First value is the number of
+       time points. Second value is number of spatial points.
+    field_was_found : bool
+        Boolean representing if field was found in inspect_resource.
+    """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
 
         self.component = input_data["component"]
         self.field_name = input_data["field"]
-        self.output = input_data["output_type"] # "stdout"
+        self.output = input_data["output_type"]  # "stdout"
         self.field = None
 
         self.dump_interval = None
@@ -178,37 +208,63 @@ class FieldDiagnostic(Diagnostic):
         self.field_was_found = False
 
     def check_step(self):
+        """
+        Run diagnostic if dump_interval time has passed since last_dump and update last_dump with current time if run.
+        """
         if self.owner.clock.time >= self.last_dump + self.dump_interval:
             self.do_diagnostic()
             self.last_dump = self.owner.clock.time
 
     def do_diagnostic(self):
+        """
+        Run output_function depending on field.shape.
+        """
         if len(self.field.shape) > 1:
             self.output_function(self.field[:, self.component])
         else:
             self.output_function(self.field)
 
     def inspect_resource(self, resource):
+        """
+        Assign attribute field if field_name given in resource and update boolean if field was found.
+
+        Parameters
+        ----------
+        resource : dict
+            Dictionary containing information of field_name to resource.
+        """
         if self.field_name in resource:
             self.field_was_found = True
             self.field = resource[self.field_name]
 
     def print_diagnose(self, data):
+        """
+        Print field_name and data onto standard output.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values.
+        """
         print(self.field_name, data)
 
     def initialize(self):
+        """
+        Initalize diagnostic_size and output function if provided as csv, and self.csv
+        as an instance of the :class: 'CSVOuputUtility' class.
+        """
         if not self.field_was_found:
-            raise(RuntimeError(f"Diagnostic field {self.field_name} was not found"))
-        self.diagnostic_size = (self.owner.clock.num_steps+1,
+            raise (RuntimeError(f"Diagnostic field {self.field_name} was not found"))
+        self.diagnostic_size = (self.owner.clock.num_steps + 1,
                                 self.owner.grid.num_points)
         if "dump_interval" in self.input_data:
             self.dump_interval = self.input_data["dump_interval"]
             self.diagnose = self.check_step
             self.last_dump = 0
-            self.diagnostic_size = (int(np.ceil(self.owner.clock.end_time/self.dump_interval)+1),
-                                    self.owner.grid.num_points)       
+            self.diagnostic_size = (int(np.ceil(self.owner.clock.end_time / self.dump_interval) + 1),
+                                    self.owner.grid.num_points)
 
-        # setup output method
+            # setup output method
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
@@ -217,9 +273,20 @@ class FieldDiagnostic(Diagnostic):
             self.csv = CSVOutputUtility(self.input_data["filename"], self.diagnostic_size)
 
     def csv_diagnose(self, data):
+        """
+        Adds 'data' into csv output buffer.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values.
+        """
         self.csv.append(data)
 
     def finalize(self):
+        """
+        Write the CSV data to file if CSV is the proper output type.
+        """
         self.do_diagnostic()
         if self.input_data["output_type"] == "csv":
             self.csv.finalize()
@@ -308,4 +375,3 @@ Diagnostic.register("point", PointDiagnostic)
 Diagnostic.register("field", FieldDiagnostic)
 Diagnostic.register("grid", GridDiagnostic)
 Diagnostic.register("clock", ClockDiagnostic)
-
