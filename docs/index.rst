@@ -6,14 +6,14 @@ TurboPy: a framework for computational physics
    :caption: Contents
 
    getting_started
-   tutorials
    api
 
-This should also include links to the GitHub repo for the core project, as well as for example turboPy apps.
 
-It should also include a reference to the paper which describes turboPy, and a suggested citation style.
+For more details about the turboPy framework, see `this preprint <https://arxiv.org/abs/2002.08842>`_ on the arxiv.
 
 Follow along with development at https://github.com/NRL-Plasma-Physics-Division/turbopy
+
+An example of an "app" created with the turboPy framework is available here: https://github.com/NRL-Plasma-Physics-Division/particle-in-field
 
 Indices and tables
 ==================
