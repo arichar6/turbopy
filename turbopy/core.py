@@ -300,16 +300,34 @@ class DynamicFactory(ABC):
         """Check if the name is in the registry"""
         return name in cls._registry
 
-
 class PhysicsModule(DynamicFactory):
     """
     This is the base class for all physics modules
     Based on Module class in TurboWAVE
-
     Because python mutable/immutable is different than C++ pointers, the implementation
     here is different. Here, a "resource" is a dictionary, and can have more than one
     thing being shared. Note that the value stored in the dictionary needs to be mutable.
     Make sure not to reinitialize it, because other physics modules will be holding a reference to it.
+
+    Parameters
+    ----------
+    owner : :class:`Simulation`
+        Simulation class that PhysicsModule belongs to.
+    input_data : dict
+       Input data.
+    _registery : dict
+        Registered derived ComputeTool classes.
+    _factory_type_name : str
+        Type of PhysicsModule child class
+
+    Attributes
+    ----------
+    owner : :class:`Simulation`
+        Simulation class that PhysicsModule belongs to.
+    module_type : None
+        Module type.
+    input_data : dict
+       Input data.
     """
     _factory_type_name = "Physics Module"
     _registry = {}
@@ -320,7 +338,14 @@ class PhysicsModule(DynamicFactory):
         self.input_data = input_data
 
     def publish_resource(self, resource: dict):
-        """Method which implements the details of sharing resources"""
+        """
+        Method which implements the details of sharing resources
+
+        Parameters
+        ----------
+        resource : dict
+            resource dictionary to be shared
+        """
         for physics_module in self.owner.physics_modules:
             physics_module.inspect_resource(resource)
         for diagnostic in self.owner.diagnostics:
@@ -328,15 +353,18 @@ class PhysicsModule(DynamicFactory):
 
     def inspect_resource(self, resource: dict):
         """Method for accepting resources shared by other PhysicsModules
-
         If your subclass needs the data described by the key, now's
         their chance to save a pointer to the data.
+
+        Parameters
+        ----------
+        resource : dict
+            resource dictionary to be shared
         """
         pass
 
     def exchange_resources(self):
         """Main method for sharing resources with other PhysicsModules
-
         This is the function where you call publish_resource, to tell
         other physics modules about data you want to share.
         """
@@ -344,14 +372,12 @@ class PhysicsModule(DynamicFactory):
 
     def update(self):
         """Do the main work of the PhysicsModule
-
         This is called at every time step in the main loop.
         """
         raise NotImplementedError
 
     def reset(self):
         """Perform any needed reset operations
-
         This is called at every time step in the main loop, before any
         of the calls to `update`.
         """
@@ -359,10 +385,10 @@ class PhysicsModule(DynamicFactory):
 
     def initialize(self):
         """Perform initialization operations for this PhysicsModule
-
         This is called before the main simulation loop
         """
         pass
+
 
 
 class ComputeTool(DynamicFactory):
