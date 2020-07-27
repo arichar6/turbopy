@@ -1,9 +1,7 @@
 TurboPy API
 ===========
 
-**TODO:** an introduction to the turboPy API should go here.
-
-**Question:** Should we use ``autoclass`` instead of ``automodule`` in order to organize this API documentation how we want?
+The core turboPy API is composed of one main class (the :class:`turbopy.core.Simulation` class) and three abstract base classes, :class:`turbopy.core.PhyiscsModule`, :class:`turbopy.core.Diagnostic`, and :class:`turbopy.core.ComputeTool`.
 
 Core framework classes
 ----------------------

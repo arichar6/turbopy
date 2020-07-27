@@ -6,7 +6,6 @@ TurboPy: a framework for computational physics
    :caption: Contents
 
    getting_started
-   tutorials
    api
 
 This should also include links to the GitHub repo for the core project, as well as for example turboPy apps.
