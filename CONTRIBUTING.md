@@ -24,6 +24,16 @@ The naming convention for development branches follows a simple formula:
 where `xx = issue ID number` that the branch is addressing. The brief description
 should only be a two to three words. Each word should be separated by a hyphen.
 
+Documentation
+-------------
+
+Any modules or apps that are created should include documentation, both docstrings
+and comments throughout the code. TurboPy uses the 
+[`numpydoc` style](https://numpydoc.readthedocs.io) for docstrings,
+and we encourage the same style for those contributing to the project. The
+documentation is then automatically generated and hosted 
+[at ReadTheDocs](https://turbopy.readthedocs.io).
+
 Testing
 -------
 
@@ -49,4 +59,3 @@ branch name. If you're planning to make more changes to that branch, then add `[
 to the beginning of the title and make a draft pull request. Once you are ready to 
 merge your contribution, remove `[WIP]` from the name and convert from "draft" pull 
 request to "regular" by clicking the "Ready for review" button.
-
