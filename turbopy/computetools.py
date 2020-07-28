@@ -2,10 +2,10 @@
 Several subclasses of the `ComputeTool` class for common scenarios
 
 Included stock subclasses:
-    Solver for Poisson's equation (1-D) to find electric potential fields
-    EXPLAIN : FINITEDIFFERENCE CLASS
-    Particle pusher for magnetic fields using the Boris method
-    Interpolate a function given two datasets
+    Solver for the 1D radial Poisson's equation
+    Helper functions for constructing sparse finite difference matrices
+    Particle pusher for electric and magnetic fields using the Boris method
+    Interpolate a function y(x) given y on a grid in x
 """
 import numpy as np
 import scipy.interpolate as interpolate
