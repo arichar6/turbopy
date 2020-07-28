@@ -1,15 +1,17 @@
 """
 Core base classes of the turboPy framework
 
-TODO: add extended summary
+Notes
+-----
+A preprint of the paper describing this code is available on
+the arxiv [1]_.
 
-TODO: As appropriate, add some of the following sections
+References
+----------
+.. [1] A. S. Richardson et al., "TurboPy: A Lightweight Python Framework
+       for Computational Physics." Preprint available online:
+       https://arxiv.org/abs/2002.08842
 
-* routine listings
-* see also
-* notes
-* references
-* examples
 """
 from pathlib import Path
 from abc import ABC, abstractmethod
