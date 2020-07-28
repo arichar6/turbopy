@@ -57,7 +57,8 @@ napoleon_numpy_docstring = True
 # Options for intersphinx
 intersphinx_mapping = {
     'python': ('https://docs.python.org/', None),
-    'numpy': ('http://docs.scipy.org/doc/numpy/', None)
+    'numpy': ('http://docs.scipy.org/doc/numpy/', None),
+    'scipy': ('http://docs.scipy.org/doc/scipy/reference/', None),
 }
 
 master_doc = 'index'
@@ -68,6 +69,7 @@ master_doc = 'index'
 # a list of builtin themes.
 #
 html_theme = 'alabaster'
+html_static_path = ['_static']
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

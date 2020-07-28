@@ -1,11 +1,14 @@
 """
-Several subclasses of the `ComputeTool` class for common scenarios
+Several subclasses of the :class:`turbopy.core.ComputeTool` class for
+common scenarios
 
 Included stock subclasses:
-    Solver for Poisson's equation (1-D) to find electric potential fields
-    EXPLAIN : FINITEDIFFERENCE CLASS
-    Particle pusher for magnetic fields using the Boris method
-    Interpolate a function given two datasets
+
+- Solver for the 1D radial Poisson's equation
+- Helper functions for constructing sparse finite difference matrices
+- Charged particle pusher using the Boris method
+- Interpolate a function y(x) given y on a grid in x
+
 """
 import numpy as np
 import scipy.interpolate as interpolate
@@ -16,37 +19,18 @@ from .core import ComputeTool, Simulation
 
 class PoissonSolver1DRadial(ComputeTool):
     """
-    `ComputeTool` that solves an instance of Poisson's Equation in a radial 1-D context
+    Solve 1D radial Poisson's Equation, using finite difference methods
 
     Parameters
     ----------
     owner : Simulation
-        The `Simulation` object that contains this object
+        The :class:`turbopy.core.Simulation` object that contains this
+        object
     input_data : dict
-        Data containing the name of the tool
-    
-    Attributes
-    ----------
-    owner : Simulation
-        The `Simulation` object that contains this object
-    input_data : dict
-        Dictionary containing the name of the `ComputeTool` so it can be called by `PhysicsModules`
-    field : ndarray
-        The list of points over which the computations are done
+        There are no custom configuration options for this tool
     """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
-        self.field = None
-        
-    def initialize(self):
-        """
-        The `Grid` that provides the `field` attribute may be instantiated after the computetool.
-        In order to ensure that the grid exists when it is called to provide the data for `field`,
-        the initialize method is called after all the objects in the `Simulation` are created.
-
-        This method pulls the field data from the `Grid`
-        """
-        self.field = self.owner.grid.generate_field(1)
     
     def solve(self, sources):
         """
@@ -54,77 +38,162 @@ class PoissonSolver1DRadial(ComputeTool):
 
         Parameters
         ----------
-        sources : TODO
-            TODO: explain what `sources` is supposed to be
+        sources : :class:`numpy.ndarray`
+            Vector containing source terms for the Poisson equation
 
         Returns
         -------
-        ndarray
-            TODO: explain
+        :class:`numpy.ndarray`
+            Vector containing the finite difference solution
         """
         r = self.owner.grid.r
         dr = np.mean(self.owner.grid.cell_widths)
         I1 = np.cumsum(r * sources * dr)
         integrand = I1 * dr / r
-        i0 = 2 * integrand[1] - integrand[2]   # linearly extrapolate to r = 0
+        # linearly extrapolate to r = 0
+        i0 = 2 * integrand[1] - integrand[2]
         integrand[0] = i0
-        integrand = integrand - i0     # add const of integer so derivative = 0 at r = 0
+        # add constant of integration so derivative = 0 at r = 0
+        integrand = integrand - i0
         I2 = np.cumsum(integrand)
         return I2 - I2[-1]
 
 
 class FiniteDifference(ComputeTool):
+    """Helper functions for constructing finite difference matrices
+
+    This class contains functions for constructing finite difference
+    approximations to various differential operators. The
+    :mod:`scipy.sparse` package from :mod:`scipy` is used since most of
+    these are tridiagonal sparse matrices.
+
+    Parameters
+    ----------
+    owner : Simulation
+        The :class:`turbopy.core.Simulation` object that contains this
+        object
+    input_data : dict
+        Dictionary of configuration options.
+        The expected parameters are:
+
+        - ``"method"`` | {``"centered"`` | ``"upwind_left"``} :
+            Select between centered difference, and left upwind
+            difference for the `setup_ddx` member function.
+    """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
         self.dr = self.owner.grid.dr
     
     def setup_ddx(self):
-        assert (self.input_data["method"] in ["centered", "upwind_left"])
+        """Select between centered and upwind finite difference
+
+        Returns
+        -------
+        function
+            Returns a reference to either :meth:`centered_difference` or
+            :meth:`upwind_left`, based on the configuration option
+            :attr:`input_data["method"]`
+        """
+        assert (self.input_data["method"] in
+                ["centered", "upwind_left"])
         if self.input_data["method"] == "centered":
             return self.centered_difference
         if self.input_data["method"] == "upwind_left":
             return self.upwind_left
     
     def centered_difference(self, y):
+        """Centered finite difference estimate for dy/dx
+
+        Parameters
+        ----------
+        y : :class:`numpy.ndarray`
+            Vector of values on the grid
+
+        Returns
+        -------
+        :class:`numpy.ndarray`
+            Estimate of the derivative dy/dx constructed using the
+            centered finite difference method
+        """
         d = self.owner.grid.generate_field()
-        d[1:-1] = (y[2:] - y[:-2]) / self.dr_centered
+        d[1:-1] = (y[2:] - y[:-2]) / (2 * self.dr)
         return d
-    
-    def ddx(self):
-        N = self.owner.grid.num_points
-        g = 1/(2.0 * self.dr)
-        col_below = np.zeros(N) - g
-        col_above = np.zeros(N) + g
-        D = sparse.dia_matrix( ([col_below, col_above], [-1, 1]), shape=(N, N) )
-        return D
-        
-    
+
     def upwind_left(self, y):
+        """Left upwind finite difference estimate for dy/dx
+
+        Parameters
+        ----------
+        y : :class:`numpy.ndarray`
+            Vector of values on the grid
+
+        Returns
+        -------
+        :class:`numpy.ndarray`
+            Estimate of the derivative dy/dx constructed using the
+            left upwind finite difference method
+        """
         d = self.owner.grid.generate_field()
         d[1:] = (y[1:] - y[:-1]) / self.owner.grid.cell_widths
         return d
 
+    def ddx(self):
+        """Finite difference matrix for df/dx (centered)
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements the centered finite difference
+            approximation to df/dx
+        """
+        N = self.owner.grid.num_points
+        g = 1/(2.0 * self.dr)
+        col_below = np.zeros(N) - g
+        col_above = np.zeros(N) + g
+        D = sparse.dia_matrix(([col_below, col_above], [-1, 1]),
+                              shape=(N, N))
+        return D
+
     def radial_curl(self):
-        # FD matrix for (rB)'/r = (1/r)(d/dr)(rB)
+        """Finite difference matrix for (rf)'/r = (1/r)(d/dr)(rf)
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a finite difference approximation
+            to (rf)'/r = (1/r)(d/dr)(rf)
+        """
         N = self.owner.grid.num_points
         g = 1/(2.0 * self.dr)
         col_below = np.zeros(N)
         col_diag = np.zeros(N)
         col_above = np.zeros(N)
-        col_below[:-1] = -g * (self.owner.grid.r[:-1]/self.owner.grid.r[1:])
-        col_above[1:] = g * (self.owner.grid.r[1:]/self.owner.grid.r[:-1])
-        # set boundary conditions
+        col_below[:-1] = -g * (self.owner.grid.r[:-1]
+                               / self.owner.grid.r[1:])
+        col_above[1:] = g * (self.owner.grid.r[1:]
+                             / self.owner.grid.r[:-1])
+
+        # Set boundary conditions
         # At r=0, use B~linear, and B=0.
-        col_above[1] = 2.0 / self.dr     # for col_above, the first element is dropped
+        # for col_above, the first element is dropped
+        col_above[1] = 2.0 / self.dr
         # At r=Rw, use rB~const?
-        col_diag[-1] = 1.0 / self.dr     # for col_below, the last element is dropped
+        # for col_below, the last element is dropped
+        col_diag[-1] = 1.0 / self.dr
         col_below[-2] = 2.0 * col_below[-1]
         # set main columns for finite difference derivative
-        D = sparse.dia_matrix( ([col_below, col_diag, col_above], [-1, 0, 1]), shape=(N, N) )
+        D = sparse.dia_matrix(([col_below, col_diag, col_above],
+                               [-1, 0, 1]), shape=(N, N))
         return D
     
     def del2_radial(self):
-        # FD matrix for (1/r)(d/dr)(r (df/dr))
+        """Finite difference matrix for (1/r)(d/dr)(r (df/dr))
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a finite difference approximation
+            to (1/r)(d/dr)(r (df/dr))"""
         N = self.owner.grid.num_points
         g1 = 1/(2.0 * self.dr)
         col_below = -g1 * np.ones(N)
@@ -136,7 +205,8 @@ class FiniteDifference(ComputeTool):
         # BC at r=0
         col_above[1] = 0
         
-        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))
+        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]),
+                               shape=(N, N))
         
         g2 = 1/(self.dr**2)
         col_below = g2 * np.ones(N)
@@ -145,14 +215,21 @@ class FiniteDifference(ComputeTool):
         
         # BC at r=0, first row of D
         col_above[1] = 2 * col_above[1]
-        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
+        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above],
+                                [-1, 0, 1]), shape=(N, N))
         
         # Need to set boundary conditions!
         D = D1 + D2
         return D
     
     def del2(self):
-        # FD matrix for d2/dx2
+        """Finite difference matrix for d2/dx2
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a finite difference approximation
+            to (d/dx)(df/dx)"""
         N = self.owner.grid.num_points
         
         g2 = 1/(self.dr**2)
@@ -162,23 +239,39 @@ class FiniteDifference(ComputeTool):
         
         # BC at r=0, first row of D
         col_above[1] = 2 * col_above[1]
-        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above], [-1, 0, 1]), shape=(N, N))
-
+        D2 = sparse.dia_matrix(([col_below, -2*col_diag, col_above],
+                                [-1, 0, 1]), shape=(N, N))
         return D2
-        
-    
+
     def ddr(self):
-        # FD matrix for (d/dr) f
+        """Finite difference matrix for (d/dr) f
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a finite difference approximation
+            to df/dr
+        """
         N = self.owner.grid.num_points
         g1 = 1/(2.0 * self.dr)
         col_below = -g1 * np.ones(N)
         col_above = g1 * np.ones(N)
         # BC at r=0
         col_above[1] = 0
-        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]), shape=(N, N))        
+        D1 = sparse.dia_matrix(([col_below, col_above], [-1, 1]),
+                               shape=(N, N))
         return D1
 
     def BC_left_extrap(self):
+        """Sparse matrix to extrapolate solution at left boundary
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a boundary condition for the left
+            boundary such that the solution at the first two internal
+            grid points is extrapolated to the boundary point.
+        """
         N = self.owner.grid.num_points
         col_diag = np.ones(N)
         col_above = np.zeros(N)
@@ -189,10 +282,19 @@ class FiniteDifference(ComputeTool):
         col_above[1] = 2
         col_above2[2] = -1
 
-        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
+        BC = sparse.dia_matrix(([col_diag, col_above, col_above2],
+                                [0, 1, 2]), shape=(N, N))
         return BC
 
     def BC_left_avg(self):
+        """Sparse matrix to set average solution at left boundary
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a boundary condition for the left
+            boundary.
+        """
         N = self.owner.grid.num_points
         col_diag = np.ones(N)
         col_above = np.zeros(N)
@@ -203,10 +305,20 @@ class FiniteDifference(ComputeTool):
         col_above[1] = 1.5
         col_above2[2] = -0.5
 
-        BC = sparse.dia_matrix(([col_diag, col_above, col_above2], [0,1,2]), shape=(N, N))
+        BC = sparse.dia_matrix(([col_diag, col_above, col_above2],
+                                [0, 1, 2]), shape=(N, N))
         return BC        
 
     def BC_left_quad(self):
+        """Sparse matrix for quadratic extrapolation at left boundary
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a boundary condition for the left
+            boundary such that the solution at the first two internal
+            grid points is extrapolated to the boundary point.
+        """
         N = self.owner.grid.num_points
         r = self.owner.grid.r
         col_diag = np.ones(N)
@@ -224,18 +336,36 @@ class FiniteDifference(ComputeTool):
         return BC
     
     def BC_left_flat(self):
+        """Sparse matrix to set Neumann condition at left boundary
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a boundary condition for the left
+            boundary such that the derivative of the solution is zero
+            at the boundary.
+        """
         N = self.owner.grid.num_points
         col_diag = np.ones(N)
         col_above = np.zeros(N)
-        col_above2 = np.zeros(N)
         # for col_above, the first element is dropped
         col_diag[0] = 0
         col_above[1] = 1
 
-        BC = sparse.dia_matrix(([col_diag, col_above], [0,1]), shape=(N, N))
+        BC = sparse.dia_matrix(([col_diag, col_above], [0, 1]),
+                               shape=(N, N))
         return BC        
     
     def BC_right_extrap(self):
+        """Sparse matrix to extrapolate solution at right boundary
+
+        Returns
+        -------
+        :class:`scipy.sparse.dia_matrix`
+            Matrix which implements a boundary condition for the right
+            boundary such that the solution at the first two internal
+            grid points is extrapolated to the boundary point.
+        """
         N = self.owner.grid.num_points
         col_diag = np.ones(N)
         col_below = np.zeros(N)
@@ -246,27 +376,27 @@ class FiniteDifference(ComputeTool):
         col_below[-2] = 2
         col_below2[-3] = -1
 
-        BC_right = sparse.dia_matrix(([col_below2, col_below, col_diag], [-2, -1, 0]), shape=(N, N))
+        BC_right = sparse.dia_matrix(([col_below2, col_below, col_diag],
+                                      [-2, -1, 0]), shape=(N, N))
         return BC_right
 
 
 class BorisPush(ComputeTool):
     """
-    Calculate the motion of a charged particle in a magnetic field
+    Calculate charged particle motion in electric and magnetic fields
+
+    This is an implementation of the Boris push algorithm.
 
     Parameters
     ----------
     owner : Simulation
-        The `Simulation` object that contains this object
+        The :class:`turbopy.core.Simulation` object that contains this
+        object
     input_data : dict
-        Data including the name of the tool
+        There are no custom configuration options for this tool
 
     Attributes
     ----------
-    owner : Simulation
-        The `Simulation` object that contains this object
-    input_data : dict
-        Dictionary containing data concerning the object, namely the class name
     c2 : float
         The speed of light squared
     """
@@ -276,27 +406,29 @@ class BorisPush(ComputeTool):
 
     def push(self, position, momentum, charge, mass, E, B):
         """
-        Update the position and momentum of a charged particle in an electromagnetic field
+        Update the position and momentum of a charged particle in an
+        electromagnetic field
 
         Parameters
         ----------
-        position : ndarray
+        position : :class:`numpy.ndarray`
             The initial position of the particle as a vector
-        momentum : ndarray
+        momentum : :class:`numpy.ndarray`
             The initial momentum of the particle as a vector
         charge : float
             The electric charge of the particle
         mass : float
             The mass of the particle
-        E : ndarray
-            The value of the electric field around the particle
-        B: ndarray
-            The value of the magnetic field around the particle
+        E : :class:`numpy.ndarray`
+            The value of the electric field at the particle
+        B: :class:`numpy.ndarray`
+            The value of the magnetic field at the particle
         """
         dt = self.owner.clock.dt
 
         vminus = momentum + dt * E * charge / 2
-        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
+        m1 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)
+                     / self.c2)
 
         t = dt * B * charge / m1[:, np.newaxis] / 2
         s = 2 * t / (1 + np.sum(t*t, axis=-1)[:, np.newaxis])
@@ -304,34 +436,29 @@ class BorisPush(ComputeTool):
         vprime = vminus + np.cross(vminus, t)
         vplus = vminus + np.cross(vprime, s)
         momentum[:] = vplus + dt * E * charge / 2
-        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)/self.c2)
+        m2 = np.sqrt(mass**2 + np.sum(momentum*momentum, axis=-1)
+                     / self.c2)
         position[:] = position + dt * momentum / m2[:, np.newaxis]
 
 
 class Interpolators(ComputeTool):
     """
-    Interpolate a function given two lists of numbers (input and output)
+    Interpolate a function y(x) given y at grid points in x
 
     Parameters
     ----------
     owner : Simulation
-        The `Simulation` object that contains this object
+        The :class:`turbopy.core.Simulation` object that contains this
+        object
     input_data : dict
-        Dictionary containing information about the class, i.e. its name
-
-    Attributes
-    ----------
-    owner : Simulation
-        The `Simulation` object that contains this object
-    input_data : dict
-        Dictionary containing information about the class, i.e. its name
+        There are no custom configuration options for this tool
     """
     def __init__(self, owner: Simulation, input_data: dict):
         super().__init__(owner, input_data)
 
     def interpolate1D(self, x, y, kind='linear'):
         """
-        Given two datasets, return a function relating them
+        Given two datasets, return an interpolating function
 
         Parameters
         ----------
@@ -340,12 +467,15 @@ class Interpolators(ComputeTool):
         y : list
             List of output values to be interpolated
         kind : str
-            Order of function being used to relate the two datasets, defaults to "linear"
+            Order of function being used to relate the two datasets,
+            defaults to "linear". Passed as a parameter to
+            scipy.interpolate.interpolate.interp1d.
 
         Returns
         -------
         f : scipy.interpolate.interpolate.interp1d
-            Function relating `x` and `y`
+            Function which interpolates y(x) given grid `x` and
+            values `y` on the grid.
         """
         f = interpolate.interp1d(x, y, kind)
         return f
@@ -355,6 +485,3 @@ ComputeTool.register("BorisPush", BorisPush)
 ComputeTool.register("PoissonSolver1DRadial", PoissonSolver1DRadial)
 ComputeTool.register("FiniteDifference", FiniteDifference)
 ComputeTool.register("Interpolators", Interpolators)
-
-
-
