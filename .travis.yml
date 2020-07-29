@@ -20,7 +20,11 @@ install:
     #- pip install docstr-coverage
 
 script:
-    - pytest
+    - pytest --cov-report=xml --cov=turbopy tests/
+
+after_success:
+    - bash <(curl -s https://codecov.io/bash)
+
       #after_success:
       # - codecov # submit coverage
       # test
