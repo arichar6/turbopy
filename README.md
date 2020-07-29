@@ -1,6 +1,7 @@
 turboPy
 =======================
 [![Build Status](https://travis-ci.org/arichar6/turbopy.svg?branch=main)](https://travis-ci.org/arichar6/turbopy)
+[![codecov](https://codecov.io/gh/arichar6/turbopy/branch/main/graph/badge.svg)](https://codecov.io/gh/arichar6/turbopy)
 
 A lightweight computational physics framework, based on the organization of turboWAVE. Implements a "Simulation, PhysicsModule, ComputeTool" class hierarchy.
 
