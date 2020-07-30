@@ -4,6 +4,110 @@ import numpy as np
 from turbopy.core import *
 
 
+class ExampleTool(ComputeTool):
+    """Example ComputeTool subclass for tests"""
+
+
+class ExampleModule(PhysicsModule):
+    """Example PhysicModule subclass for tests"""
+    def update(self):
+        pass
+
+
+# Simulation class test methods
+@pytest.fixture(name='simple_sim')
+def sim_fixt():
+    """Pytest fixture for basic simulation class"""
+    dic = {"Grid": {"N": 2, "r_min": 0, "r_max": 1},
+           "Clock": {"start_time": 0,
+                     "end_time": 10,
+                     "num_steps": 100},
+           "Tools": {"ExampleTool": {}},
+           "PhysicsModules": {"ExampleModule": {}},
+           }
+    return Simulation(dic)
+
+
+def test_simulation_init_should_create_class_instance_when_called(simple_sim):
+    """Test init method for Simulation class"""
+    assert simple_sim.physics_modules == []
+    assert simple_sim.compute_tools == []
+    assert simple_sim.diagnostics == []
+    assert simple_sim.grid is None
+    assert simple_sim.clock is None
+    assert simple_sim.units is None
+    dic = {"Grid": {"N": 2, "r_min": 0, "r_max": 1},
+           "Clock": {"start_time": 0,
+                     "end_time": 10,
+                     "num_steps": 100},
+           "Tools": {"ExampleTool": {}},
+           "PhysicsModules": {"ExampleModule": {}}
+           }
+    assert simple_sim.input_data == dic
+
+
+def test_read_grid_from_input_should_set_grid_attr_when_called(simple_sim):
+    """Test read_grid_from_input method in Simulation class"""
+    simple_sim.read_grid_from_input()
+    assert simple_sim.grid.num_points == 2
+    assert simple_sim.grid.r_min == 0
+    assert simple_sim.grid.r_max == 1
+
+
+def test_read_clock_from_input_should_set_clock_attr_when_called(simple_sim):
+    """Test read_clock_from_input method in Simulation class"""
+    simple_sim.read_clock_from_input()
+    assert simple_sim.clock.owner == simple_sim
+    assert simple_sim.clock.start_time == 0
+    assert simple_sim.clock.time == 0
+    assert simple_sim.clock.end_time == 10
+    assert simple_sim.clock.this_step == 0
+    assert simple_sim.clock.print_time is False
+    assert simple_sim.clock.num_steps == 100
+    assert simple_sim.clock.dt == 0.1
+    dic = {"Grid": {"N": 2, "r_min": 0, "r_max": 1},
+           "Clock": {"start_time": 0,
+                     "end_time": 10,
+                     "dt": 0.2,
+                     "print_time": True}}
+    other_sim = Simulation(dic)
+    other_sim.read_clock_from_input()
+    assert other_sim.clock.dt == 0.2
+    assert other_sim.clock.num_steps == 50
+    assert other_sim.clock.print_time is True
+
+
+def test_read_tools_from_input_should_set_tools_attr_when_called(simple_sim):
+    """Test read_tools_from_input method in Simulation class"""
+    ComputeTool.register("ExampleTool", ExampleTool)
+    simple_sim.read_tools_from_input()
+    assert simple_sim.compute_tools[0].owner == simple_sim
+    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool"}
+
+
+def test_fundamental_cycle_should_advance_clock_when_called(simple_sim):
+    """Test fundamental_cycle method in Simulation class"""
+    simple_sim.read_clock_from_input()
+    simple_sim.fundamental_cycle()
+    assert simple_sim.clock.this_step == 1
+    assert simple_sim.clock.time == 0.1
+
+
+def test_run_should_run_simulation_while_clock_is_running(simple_sim):
+    """Test run method in Simulation class"""
+    PhysicsModule.register("ExampleModule", ExampleModule)
+    simple_sim.run()
+    assert simple_sim.clock.this_step == 100
+    assert simple_sim.clock.time == 10
+
+
+def test_read_modules_from_input_should_set_modules_attr_when_called(simple_sim):
+    """Test read_modules_from_input method in Simulation calss"""
+    simple_sim.read_modules_from_input()
+    assert simple_sim.physics_modules[0].owner == simple_sim
+    assert simple_sim.physics_modules[0].input_data == {"name": "ExampleModule"}
+
+
 #Grid class test methods
 @pytest.fixture(name='simple_grid')
 def grid_conf():
@@ -66,6 +170,7 @@ def test_create_interpolator(simple_grid):
     assert np.allclose(interp(field), linear_value)
 
 
+#SimulationClock class test methods
 def test_integer_num_steps():
     """Tests for initialization of SimulationClock"""
     clock_config = {'start_time': 0.0,
@@ -101,3 +206,4 @@ def test_is_running():
     for i in range(clock2.num_steps):
         clock2.advance()
     assert not clock2.is_running()
+    
