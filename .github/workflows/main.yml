@@ -27,7 +27,7 @@ jobs:
       uses: JackMcKew/python-interrogate-check@main
       with:
         path: 'turbopy'
-        badge-location: 'badges/interrogate_badge.svg'
+        badge-location: '.'
 
     - name: Commit files
       run: |
