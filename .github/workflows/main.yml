@@ -27,13 +27,13 @@ jobs:
       uses: JackMcKew/python-interrogate-check@main
       with:
         path: 'turbopy'
-        badge-location: '.'
+        badge-location: 'interrogate_badge.svg'
 
     - name: Commit files
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add badges/interrogate_badge.svg
+        git add interrogate_badge.svg
         git commit -m "Update interrogate_badge.svg" -a
 
     - name: Push changes
