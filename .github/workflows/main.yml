@@ -15,11 +15,12 @@ jobs:
   check-docs:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - name: Python Interrogate Check
         uses: JackMcKew/python-interrogate-check@v0.1.1
         with:
           # File or directory to run interrogate on.
-          path: ./turbopy/
+          path: turbopy
           # Fail when coverage % is less than a given amount.
           fail-under: 80
           # Generate a `shields.io` status badge (an SVG image) in at a given file or directory.
