@@ -1,6 +1,65 @@
 """Tests for turbopy/computetools.py"""
 import pytest
+import numpy as np
 from turbopy.computetools import *
+
+
+def test_init_should_create_object():
+    """Method that creates a BorisPush object to test __init__"""
+    init_example = BorisPush(Simulation({"type": "BorisPush"}),
+                             {"type": "BorisPush"})
+    assert isinstance(init_example, BorisPush)
+    assert init_example.c2 == 2.9979e8 ** 2
+
+
+def test_push_with_no_fields():
+    """Tests the functionality of the push method, when E=B=0"""
+    input_data = {"Clock":
+                      {"start_time": 0, "end_time": 100, "dt": 1e-9},
+                  "type": "BorisPush",
+                  "Grid": {"N": 10, "min": 20, "max": 30},
+                  "PhysicsModules": {}}
+    owner = Simulation(input_data)
+    owner.prepare_simulation()
+    push_example = BorisPush(owner, input_data)
+    charge = 1.6022e-19
+    mass = 1.6726e-27
+    E = np.zeros(3)
+    B = np.zeros(3)
+    x_i = np.array([[0, 0, 0.0]], dtype=np.float)
+    v_i = np.array([[0, 0, 3.0e2]], dtype=np.float)
+    p_i = mass * v_i
+    clock = input_data["Clock"]
+    N = 10
+    x_final = v_i * N * clock["dt"]
+    for i in range(N):
+        push_example.push(x_i, p_i, charge, mass, E, B)
+    assert np.allclose(x_i, x_final)
+
+
+def test_push_with_crossed_fields():
+    """Tests the functionality of the push method for E, B, not 0"""
+    input_data = {
+        "Clock": {"start_time": 0, "end_time": 100, "dt": 1e-9},
+        "type": "BorisPush",
+        "Grid": {"N": 10, "min": 20, "max": 30},
+        "PhysicsModules": {}}
+    owner = Simulation(input_data)
+    owner.prepare_simulation()
+    push_example = BorisPush(owner, input_data)
+    charge = 1.6022e-19
+    mass = 1.6726e-27
+    N = 10
+    x_i = np.array([[0, 0, 0.0]], dtype=np.float)
+    p_i = np.array([[0, 0, 0.0]], dtype=np.float)
+    E = np.array([[10, 0, 0]], dtype=np.float)
+    B = np.array([[0, 0, 10]], dtype=np.float)
+    for i in range(N):
+        push_example.push(x_i, p_i, charge, mass, E, B)
+    x_final = np.array([[2.20028479e-09, -1.04482737e-08, 0]])
+    assert np.allclose(x_i, x_final)
+    p_final = np.array([[0.47183691, -1.88168585,  0]]) * mass
+    assert np.allclose(p_i / mass, p_final / mass)
 
 
 @pytest.fixture
