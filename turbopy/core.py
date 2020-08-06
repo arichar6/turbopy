@@ -278,6 +278,9 @@ class Simulation:
             return tools[0]
         return None
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
+
 
 class DynamicFactory(ABC):
     """Abstract class which provides dynamic factory functionality
@@ -340,7 +343,7 @@ class PhysicsModule(DynamicFactory):
 
     Parameters
     ----------
-    _registery : dict
+    _registry : dict
         Registered derived ComputeTool classes.
     _factory_type_name : str
         Type of PhysicsModule child class
@@ -420,6 +423,9 @@ class PhysicsModule(DynamicFactory):
         """
         pass
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
+
 
 class ComputeTool(DynamicFactory):
     """This is the base class for compute tools
@@ -437,7 +443,7 @@ class ComputeTool(DynamicFactory):
 
     Attributes
     ----------
-    _registery : dict
+    _registry : dict
         Registered derived ComputeTool classes.
     _factory_type_name : str
         Type of ComputeTool child class
@@ -461,6 +467,9 @@ class ComputeTool(DynamicFactory):
     def initialize(self):
         """Perform any initialization operations needed for this tool"""
         pass
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
 
 
 class SimulationClock:
@@ -509,6 +518,7 @@ class SimulationClock:
 
     def __init__(self, owner: Simulation, clock_data: dict):
         self.owner = owner
+        self.clock_data = clock_data
         self.start_time = clock_data["start_time"]
         self.time = self.start_time
         self.end_time = clock_data["end_time"]
@@ -540,6 +550,9 @@ class SimulationClock:
     def is_running(self):
         """Check if time is less than end time"""
         return self.this_step < self.num_steps
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.clock_data})"
 
 
 class Grid:
@@ -807,6 +820,9 @@ class Grid:
                                                       + self.inverse_cell_volumes[0:-1])
         self.inverse_interface_volumes[-1] = self.inverse_cell_volumes[-1]
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.grid_data})"
+
 
 class Diagnostic(DynamicFactory):
     """Base diagnostic class.
@@ -882,3 +898,6 @@ class Diagnostic(DynamicFactory):
         complete.
         """
         pass
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
