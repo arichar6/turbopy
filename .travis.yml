@@ -25,7 +25,7 @@ script:
 after_success:
     - bash <(curl -s https://codecov.io/bash)
 
-#after_success:
+      #after_success:
       # - codecov # submit coverage
       # test
       # - pytest --cov=turbopy tests/ | tee pytest.txt
