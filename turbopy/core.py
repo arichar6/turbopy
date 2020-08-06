@@ -591,7 +591,7 @@ class Grid:
         Array of evenly spaced Grid values.
     cell_centers : float
         Value of the coordinate in the middle of each Grid cell.
-    cell_widths : float
+    cell_widths : :class:`numpy.ndarray`
         Width of each cell in the Grid.
     r_inv : float
         Inverse of coordinate values at each Grid point,
