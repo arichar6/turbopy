@@ -276,7 +276,6 @@ def test_BC_left_flat(fin_diff):
     for actual, expected in zip(d.data, [diag, above]):
         assert np.allclose(actual, expected)
 
-
 def test_BC_right_extrap(fin_diff):
     """Tests for turbopy.computetools.FiniteDifference's BC_right_extrap method."""
     N = fin_diff.owner.grid.num_points
@@ -289,3 +288,49 @@ def test_BC_right_extrap(fin_diff):
     assert d.shape == (N, N)
     for actual, expected in zip(d.data, [below2, below, diag]):
         assert np.allclose(actual, expected)
+
+        
+def test_init_poisson():
+    """Method that creates a PoissonSolver1DRadial object to test __init__"""
+    input_data = {
+        "Clock": {"start_time": 0, "end_time": 100, "dt": 1e-9},
+        "type": "PoissonSolver1DRadial",
+        "Grid": {"N": 10, "min": 20, "max": 30},
+        "PhysicsModules": {}}
+    owner = Simulation(input_data)
+    owner.prepare_simulation()
+    solver = PoissonSolver1DRadial(owner, input_data)
+    assert isinstance(solver, PoissonSolver1DRadial)
+
+
+def test_poisson_solver():
+    sources = np.array([5.0, 2.0, 7.0, 9.0, 2.0, 12.0, 4.0, 14.0, 11.0, 1.0, 3.0])
+    input_data = {
+        "Clock": {"start_time": 0, "end_time": 100, "dt": 1e-9},
+        "type": "PoissonSolver1DRadial",
+        "Grid": {"N": 11, "r_min": 0, "r_max": 1},
+        "PhysicsModules": {}}
+    owner = Simulation(input_data)
+    owner.prepare_simulation()
+    solver = PoissonSolver1DRadial(owner, input_data)
+    solved = solver.solve(sources)
+    assert solved[-1] == 0
+    ans = np.array([-2.67860, -2.61860, -2.49860, -2.31527, -2.14777, -1.88577, -1.62077,
+            -1.24791, -0.80666, -0.4, 0.0])
+    np.testing.assert_almost_equal(solved, ans, decimal=4)
+    assert solved.size == input_data["Grid"]["N"]
+
+    sources = np.array([5.0, 2.0, 7.0])  # fix innard parts
+    input_data = {
+        "Clock": {"start_time": 0, "end_time": 100, "dt": 1e-9},
+        "type": "PoissonSolver1DRadial",
+        "Grid": {"N": 3, "r_min": 0, "r_max": 1},
+        "PhysicsModules": {}}
+    owner = Simulation(input_data)
+    owner.prepare_simulation()
+    solver = PoissonSolver1DRadial(owner, input_data)
+    solved = solver.solve(sources)
+    assert solved[-1] == 0
+    ans = np.array([-4.5, -3.0, 0.0])
+    np.testing.assert_almost_equal(solved, ans, decimal=4)
+    assert solved.size == input_data["Grid"]["N"]
