@@ -224,8 +224,8 @@ class Simulation:
                 if not isinstance(params, list):
                     params = [params]
                 for tool in params:
-                     tool["type"] = tool_name
-                     self.compute_tools.append(tool_class(owner=self, input_data=tool)) 
+                    tool["type"] = tool_name
+                    self.compute_tools.append(tool_class(owner=self, input_data=tool)) 
     
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
