@@ -92,6 +92,13 @@ class Simulation:
             added to dictionary of parameters for all of the
             :class:`Diagnostic` constructors.
 
+            If the directory and filename keys are not specified,
+            default values are created in the 
+            :method:`read_diagnostics_from_input` method.
+            The default name for the directory is "default_output" and 
+            the default filename is the name of the Diagnostic subclass 
+            followed by a number.
+
         ``"Tools"`` : `dict` [`str`, `dict`], optional
             Dictionary of :class:`ComputeTool` items needed for the
             simulation.
@@ -224,11 +231,10 @@ class Simulation:
         """Construct :class:`PhysicsModule` instances based on input"""
         for physics_module_name, physics_module_data in \
                 self.input_data["PhysicsModules"].items():
-            physics_module_class = PhysicsModule.lookup(
-                                            physics_module_name)
+            physics_module_class = PhysicsModule.lookup(physics_module_name)
             physics_module_data["name"] = physics_module_name
             self.physics_modules.append(physics_module_class(
-                            owner=self, input_data=physics_module_data))
+                owner=self, input_data=physics_module_data))
         self.sort_modules()
 
     def read_diagnostics_from_input(self):
@@ -245,22 +251,31 @@ class Simulation:
                       self.input_data["Diagnostics"].items()
                       if not Diagnostic.is_valid_name(k)}
 
-            # todo: implement a system for making default file names
             if "directory" in params:
                 d = Path(params["directory"])
-                d.mkdir(parents=True, exist_ok=True)
+            else:
+                # Set a default output directory
+                d = Path("default_output")
+                params["directory"] = str(d)
+            d.mkdir(parents=True, exist_ok=True)
 
             for diag_type, d in diags.items():
                 diagnostic_class = Diagnostic.lookup(diag_type)
                 if not type(d) is list:
                     d = [d]
+                file_num = 0
                 for di in d:
                     # Values in di supersede values in params because
                     # of the order in which these are combined
                     di = {**params, **di, "type": diag_type}
-                    if "directory" in di and "filename" in di:
-                        di["filename"] = str(Path(di["directory"])
-                                             / Path(di["filename"]))
+                    if "filename" not in di:
+                        # Set a default output filename
+                        file_end = di.get("output_type", "out")
+                        di["filename"] = (f"{diag_type}{file_num}"
+                                          f".{file_end}")
+                        file_num += 1
+                    di["filename"] = str(Path(di["directory"])
+                                         / Path(di["filename"]))
                     self.diagnostics.append(
                         diagnostic_class(owner=self, input_data=di))
 
@@ -530,8 +545,8 @@ class SimulationClock:
         if "num_steps" in clock_data:
             self.num_steps = clock_data["num_steps"]
             self.dt = (
-                    (clock_data["end_time"] - clock_data["start_time"])
-                    / clock_data["num_steps"])
+                (clock_data["end_time"] - clock_data["start_time"])
+                / clock_data["num_steps"])
         elif "dt" in clock_data:
             self.dt = clock_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
@@ -639,7 +654,7 @@ class Grid:
         else:
             self.set_value_from_keys("dr", {"dr", "dx"})
             self.num_points = 1 + (self.r_max - self.r_min) / self.dr
-            if not (self.num_points % 1 == 0):
+            if not self.num_points % 1 == 0:
                 raise (RuntimeError("Invalid grid spacing: "
                                     "configuration does not imply "
                                     "integer number of grid points"))
@@ -807,8 +822,7 @@ class Grid:
 
     def set_interface_volumes(self):
         self.interface_volumes = np.zeros_like(self.cell_edges)
-        self.inverse_interface_volumes = np.zeros_like(
-                                            self.interface_volumes)
+        self.inverse_interface_volumes = np.zeros_like(self.interface_volumes)
 
         self.interface_volumes[0] = self.cell_volumes[0]
         self.interface_volumes[1:-1] = 0.5 * (self.cell_volumes[1:]
