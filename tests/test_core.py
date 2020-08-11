@@ -31,7 +31,9 @@ def sim_fixt():
            "Clock": {"start_time": 0,
                      "end_time": 10,
                      "num_steps": 100},
-           "Tools": {"ExampleTool": {}},
+           "Tools": {"ExampleTool": [
+                        {"custom_name": "example"},
+                        {"custom_name": "example2"}]},
            "PhysicsModules": {"ExampleModule": {}},
            "Diagnostics": {
                #default values come first
@@ -57,10 +59,12 @@ def test_simulation_init_should_create_class_instance_when_called(simple_sim):
            "Clock": {"start_time": 0,
                      "end_time": 10,
                      "num_steps": 100},
-           "Tools": {"ExampleTool": {}},
+           "Tools": {"ExampleTool": [
+                        {"custom_name": "example"},
+                        {"custom_name": "example2"}]},
            "PhysicsModules": {"ExampleModule": {}},
            "Diagnostics": {
-               #default values come first
+               # default values come first
                "clock": {},
                "ExampleDiagnostic": [
                    {},
@@ -107,7 +111,9 @@ def test_read_tools_from_input_should_set_tools_attr_when_called(simple_sim):
     ComputeTool.register("ExampleTool", ExampleTool)
     simple_sim.read_tools_from_input()
     assert simple_sim.compute_tools[0].owner == simple_sim
-    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool"}
+    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool", "custom_name": "example"}
+    assert simple_sim.compute_tools[1].owner == simple_sim
+    assert simple_sim.compute_tools[1].input_data == {"type": "ExampleTool", "custom_name": "example2"}
 
 
 def test_fundamental_cycle_should_advance_clock_when_called(simple_sim):
@@ -131,6 +137,16 @@ def test_read_modules_from_input_should_set_modules_attr_when_called(simple_sim)
     simple_sim.read_modules_from_input()
     assert simple_sim.physics_modules[0].owner == simple_sim
     assert simple_sim.physics_modules[0].input_data == {"name": "ExampleModule"}
+
+def test_find_tool_by_name_should_identify_one_tool(simple_sim):
+    simple_sim.read_tools_from_input()
+    tool = simple_sim.find_tool_by_name("ExampleTool", "example")
+    tool2 = simple_sim.find_tool_by_name("ExampleTool", "example2")
+
+    assert tool.input_data["type"] == "ExampleTool"
+    assert tool.input_data["custom_name"] == "example"
+    assert tool2.input_data["type"] == "ExampleTool"
+    assert tool2.input_data["custom_name"] == "example2"
 
 
 def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_sim):

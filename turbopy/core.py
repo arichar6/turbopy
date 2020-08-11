@@ -221,12 +221,12 @@ class Simulation:
         if "Tools" in self.input_data:
             for tool_name, params in self.input_data["Tools"].items():
                 tool_class = ComputeTool.lookup(tool_name)
-                params["type"] = tool_name
-                # TODO: somehow make tool names unique, or prevent
-                #  more than one each
-                self.compute_tools.append(tool_class(
-                    owner=self, input_data=params))
-
+                if not isinstance(params, list):
+                    params = [params]
+                for tool in params:
+                     tool["type"] = tool_name
+                     self.compute_tools.append(tool_class(owner=self, input_data=tool)) 
+    
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
         for physics_module_name, physics_module_data in \
@@ -285,10 +285,10 @@ class Simulation:
         Unused stub for future implementation"""
         pass
 
-    def find_tool_by_name(self, tool_name: str):
+    def find_tool_by_name(self, tool_name: str, custom_name: str = None):
         """Returns the :class:`ComputeTool` associated with the
         given name"""
-        tools = [t for t in self.compute_tools if t.name == tool_name]
+        tools = [t for t in self.compute_tools if t.name == tool_name and t.custom_name == custom_name]
         if len(tools) == 1:
             return tools[0]
         return None
@@ -469,6 +469,9 @@ class ComputeTool(DynamicFactory):
         object such as its name.
     name : str
         Type of ComputeTool.
+    custom_name: str
+        Name given to individual instance of tool, optional.
+        Used when multiple tools of the same type exist in one :class:`Simulation`
     """
 
     _factory_type_name = "Compute Tool"
@@ -478,6 +481,9 @@ class ComputeTool(DynamicFactory):
         self.owner = owner
         self.input_data = input_data
         self.name = input_data["type"]
+        self.custom_name = None
+        if "custom_name" in input_data:
+            self.custom_name = input_data["custom_name"]
 
     def initialize(self):
         """Perform any initialization operations needed for this tool"""
