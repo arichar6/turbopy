@@ -14,6 +14,15 @@ class ExampleModule(PhysicsModule):
         pass
 
 
+class ExampleDiagnostic(Diagnostic):
+    """Example Diagnostic subclass for tests"""
+    def diagnose(self):
+        pass
+
+
+Diagnostic.register("ExampleDiagnostic", ExampleDiagnostic)
+
+
 # Simulation class test methods
 @pytest.fixture(name='simple_sim')
 def sim_fixt():
@@ -22,8 +31,18 @@ def sim_fixt():
            "Clock": {"start_time": 0,
                      "end_time": 10,
                      "num_steps": 100},
-           "Tools": {"ExampleTool": {}},
+           "Tools": {"ExampleTool": [
+                        {"custom_name": "example"},
+                        {"custom_name": "example2"}]},
            "PhysicsModules": {"ExampleModule": {}},
+           "Diagnostics": {
+               #default values come first
+               "clock": {},
+               "ExampleDiagnostic": [
+                   {},
+                   {}
+                   ]
+               }
            }
     return Simulation(dic)
 
@@ -40,8 +59,18 @@ def test_simulation_init_should_create_class_instance_when_called(simple_sim):
            "Clock": {"start_time": 0,
                      "end_time": 10,
                      "num_steps": 100},
-           "Tools": {"ExampleTool": {}},
-           "PhysicsModules": {"ExampleModule": {}}
+           "Tools": {"ExampleTool": [
+                        {"custom_name": "example"},
+                        {"custom_name": "example2"}]},
+           "PhysicsModules": {"ExampleModule": {}},
+           "Diagnostics": {
+               # default values come first
+               "clock": {},
+               "ExampleDiagnostic": [
+                   {},
+                   {}
+                   ]
+               }
            }
     assert simple_sim.input_data == dic
 
@@ -82,7 +111,9 @@ def test_read_tools_from_input_should_set_tools_attr_when_called(simple_sim):
     ComputeTool.register("ExampleTool", ExampleTool)
     simple_sim.read_tools_from_input()
     assert simple_sim.compute_tools[0].owner == simple_sim
-    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool"}
+    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool", "custom_name": "example"}
+    assert simple_sim.compute_tools[1].owner == simple_sim
+    assert simple_sim.compute_tools[1].input_data == {"type": "ExampleTool", "custom_name": "example2"}
 
 
 def test_fundamental_cycle_should_advance_clock_when_called(simple_sim):
@@ -107,8 +138,39 @@ def test_read_modules_from_input_should_set_modules_attr_when_called(simple_sim)
     assert simple_sim.physics_modules[0].owner == simple_sim
     assert simple_sim.physics_modules[0].input_data == {"name": "ExampleModule"}
 
+def test_find_tool_by_name_should_identify_one_tool(simple_sim):
+    simple_sim.read_tools_from_input()
+    tool = simple_sim.find_tool_by_name("ExampleTool", "example")
+    tool2 = simple_sim.find_tool_by_name("ExampleTool", "example2")
 
-#Grid class test methods
+    assert tool.input_data["type"] == "ExampleTool"
+    assert tool.input_data["custom_name"] == "example"
+    assert tool2.input_data["type"] == "ExampleTool"
+    assert tool2.input_data["custom_name"] == "example2"
+
+
+def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_sim):
+    """Test read_diagnostic_from_input method in Simulation class"""
+    simple_sim.read_diagnostics_from_input()
+    input_data = simple_sim.diagnostics[0].input_data
+    assert input_data["directory"] == str(Path("default_output"))
+    assert input_data["filename"] == str(Path("default_output")
+                                         / Path("clock0.out"))
+
+
+def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_sim):
+    """Test read_diagnostic_from_input method in Simulation class"""
+    simple_sim.read_diagnostics_from_input()
+    assert simple_sim.diagnostics[0].input_data["directory"] == str(Path("default_output"))
+    assert simple_sim.diagnostics[0].input_data["filename"] == str(Path("default_output")
+                                                                   / Path("clock0.out"))
+    input_data = simple_sim.diagnostics[2].input_data
+    assert input_data["directory"] == str(Path("default_output"))
+    assert input_data["filename"] == str(Path("default_output")
+                                         / Path("ExampleDiagnostic1.out"))
+
+
+# Grid class test methods
 @pytest.fixture(name='simple_grid')
 def grid_conf():
     """Pytest fixture for grid configuration dictionary"""
@@ -117,13 +179,13 @@ def grid_conf():
             "r_max": 0.1}
     return Grid(grid)
 
-  
+
 def test_grid_init(simple_grid):
     """Test initialization of the Grid class"""
     assert simple_grid.r_min == 0.0
     assert simple_grid.r_max == 0.1
 
-    
+
 def test_parse_grid_data(simple_grid):
     """Test parse_grid_data method in Grid class"""
     assert simple_grid.num_points == 8
@@ -136,7 +198,7 @@ def test_parse_grid_data(simple_grid):
     assert grid2.dr == 0.1/7
     assert grid2.num_points == 8
 
-    
+
 def test_set_value_from_keys(simple_grid):
     """Test set_value_from_keys method in Grid class"""
     assert simple_grid.r_min == 0
@@ -146,13 +208,13 @@ def test_set_value_from_keys(simple_grid):
     with pytest.raises(Exception):
         assert Grid(grid_conf1)
 
-        
+
 def test_generate_field(simple_grid):
     """Test generate_field method in Grid class"""
     assert np.allclose(simple_grid.generate_field(), np.zeros(8))
     assert np.allclose(simple_grid.generate_field(3), np.zeros((8, 3)))
 
-    
+
 def test_generate_linear(simple_grid):
     """Test generate_linear method in Grid class"""
     comp = []
@@ -160,7 +222,7 @@ def test_generate_linear(simple_grid):
         comp.append(i/(simple_grid.num_points - 1))
     assert np.allclose(simple_grid.generate_linear(), np.array(comp))
 
-    
+
 def test_create_interpolator(simple_grid):
     """Test create_interpolator method in Grid class"""
     field = simple_grid.generate_linear()
@@ -170,7 +232,110 @@ def test_create_interpolator(simple_grid):
     assert np.allclose(interp(field), linear_value)
 
 
-#SimulationClock class test methods
+def test_set_cartesian_volumes():
+    """Test that cell volumes are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "cartesian"}
+    grid2 = Grid(grid_conf2)
+    edges = grid2.cell_edges
+    volumes = edges[1:] - edges[0:-1]
+    assert grid2.cell_volumes.size == volumes.size
+    assert np.allclose(grid2.cell_volumes, volumes)
+    # Test edge-centered volumes
+    volumes = np.zeros_like(edges)
+    volumes[0] = edges[1] - edges[0]
+    for i in range(edges.size-2):
+        volumes[i+1] = 0.5 * (edges[i+2] - edges[i])
+    volumes[-1] = edges[-1] - edges[-2]
+    assert grid2.interface_volumes.size == volumes.size
+    assert np.allclose(grid2.interface_volumes, volumes)
+
+
+def test_set_cylindrical_volumes():
+    """Test that cell volumes are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "cylindrical"}
+    grid2 = Grid(grid_conf2)
+    edges = grid2.cell_edges
+    volumes = np.pi*(edges[1:]**2 - edges[0:-1]**2)
+    assert grid2.cell_volumes.size == volumes.size
+    assert np.allclose(grid2.cell_volumes, volumes)
+    # Test edge-centered volumes
+    volumes = np.zeros_like(edges)
+    volumes[0] = np.pi * (edges[1]**2 - edges[0]**2)
+    for i in range(edges.size-2):
+        volumes[i+1] = 0.5 * np.pi * (edges[i+2]**2 - edges[i]**2)
+    volumes[-1] = np.pi * (edges[-1]**2 - edges[-2]**2)
+
+    assert grid2.interface_volumes.size == volumes.size
+    assert np.allclose(grid2.interface_volumes, volumes)
+
+
+def test_set_spherical_volumes():
+    """Test that cell volumes are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "spherical"}
+    grid2 = Grid(grid_conf2)
+    edges = grid2.cell_edges
+    volumes = 4/3 * np.pi*(edges[1:]**3 - edges[0:-1]**3)
+    assert grid2.cell_volumes.size == volumes.size
+    assert np.allclose(grid2.cell_volumes, volumes)
+    # Test edge-centered volumes
+    volumes = np.zeros_like(edges)
+    volumes[0] = 4/3 * np.pi * (edges[1]**3 - edges[0]**3)
+    for i in range(edges.size-2):
+        volumes[i+1] = 0.5 * 4/3 * np.pi * (edges[i+2]**3 - edges[i]**3)
+    volumes[-1] = 4/3 * np.pi * (edges[-1]**3 - edges[-2]**3)
+
+    assert grid2.interface_volumes.size == volumes.size
+    assert np.allclose(grid2.interface_volumes, volumes)
+
+
+def test_set_cartesian_areas():
+    """Test that cell areas are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "cartesian"}
+    grid2 = Grid(grid_conf2)
+    areas = np.ones_like(grid2.interface_areas)
+    assert grid2.interface_areas.size == areas.size
+    assert np.allclose(grid2.interface_areas, areas)
+
+
+def test_set_cylindrical_areas():
+    """Test that cell areas are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "cylindrical"}
+    grid2 = Grid(grid_conf2)
+    edges = grid2.cell_edges
+    areas = 2.0*np.pi*edges
+    assert grid2.interface_areas.size == areas.size
+    assert np.allclose(grid2.interface_areas, areas)
+
+
+def test_set_spherical_areas():
+    """Test that cell areas are set properly."""
+    grid_conf2 = {"r_min": 0,
+                  "r_max": 1,
+                  "dr": 0.1,
+                  "coordinate_system": "spherical"}
+    grid2 = Grid(grid_conf2)
+    edges = grid2.cell_edges
+    areas = 4.0 * np.pi * edges * edges
+    assert grid2.interface_areas.size == areas.size
+    assert np.allclose(grid2.interface_areas, areas)
+
+
+# SimulationClock class test methods
 def test_integer_num_steps():
     """Tests for initialization of SimulationClock"""
     clock_config = {'start_time': 0.0,
@@ -206,4 +371,3 @@ def test_is_running():
     for i in range(clock2.num_steps):
         clock2.advance()
     assert not clock2.is_running()
-    

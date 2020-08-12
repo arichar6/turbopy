@@ -78,7 +78,7 @@ class Simulation:
 
         ``"Diagnostics"`` : `dict` [`str`, `dict`], optional
             Dictionary of :class:`Diagnostic` items needed for the
-            simulaiton.
+            simulation.
 
             Each key in the dictionary should map to a
             :class:`Diagnostic` subclass key in the :class:`Diagnostic`
@@ -91,6 +91,13 @@ class Simulation:
             pair is interpreted as a default parameter value, and is
             added to dictionary of parameters for all of the
             :class:`Diagnostic` constructors.
+
+            If the directory and filename keys are not specified,
+            default values are created in the 
+            :method:`read_diagnostics_from_input` method.
+            The default name for the directory is "default_output" and 
+            the default filename is the name of the Diagnostic subclass 
+            followed by a number.
 
         ``"Tools"`` : `dict` [`str`, `dict`], optional
             Dictionary of :class:`ComputeTool` items needed for the
@@ -214,21 +221,21 @@ class Simulation:
         if "Tools" in self.input_data:
             for tool_name, params in self.input_data["Tools"].items():
                 tool_class = ComputeTool.lookup(tool_name)
-                params["type"] = tool_name
-                # TODO: somehow make tool names unique, or prevent
-                #  more than one each
-                self.compute_tools.append(tool_class(
-                    owner=self, input_data=params))
-
+                if not isinstance(params, list):
+                    params = [params]
+                for tool in params:
+                    tool["type"] = tool_name
+                    self.compute_tools.append(tool_class(owner=self, 
+                                                         input_data=tool)) 
+    
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
         for physics_module_name, physics_module_data in \
                 self.input_data["PhysicsModules"].items():
-            physics_module_class = PhysicsModule.lookup(
-                                            physics_module_name)
+            physics_module_class = PhysicsModule.lookup(physics_module_name)
             physics_module_data["name"] = physics_module_name
             self.physics_modules.append(physics_module_class(
-                            owner=self, input_data=physics_module_data))
+                owner=self, input_data=physics_module_data))
         self.sort_modules()
 
     def read_diagnostics_from_input(self):
@@ -245,22 +252,31 @@ class Simulation:
                       self.input_data["Diagnostics"].items()
                       if not Diagnostic.is_valid_name(k)}
 
-            # todo: implement a system for making default file names
             if "directory" in params:
                 d = Path(params["directory"])
-                d.mkdir(parents=True, exist_ok=True)
+            else:
+                # Set a default output directory
+                d = Path("default_output")
+                params["directory"] = str(d)
+            d.mkdir(parents=True, exist_ok=True)
 
             for diag_type, d in diags.items():
                 diagnostic_class = Diagnostic.lookup(diag_type)
                 if not type(d) is list:
                     d = [d]
+                file_num = 0
                 for di in d:
                     # Values in di supersede values in params because
                     # of the order in which these are combined
                     di = {**params, **di, "type": diag_type}
-                    if "directory" in di and "filename" in di:
-                        di["filename"] = str(Path(di["directory"])
-                                             / Path(di["filename"]))
+                    if "filename" not in di:
+                        # Set a default output filename
+                        file_end = di.get("output_type", "out")
+                        di["filename"] = (f"{diag_type}{file_num}"
+                                          f".{file_end}")
+                        file_num += 1
+                    di["filename"] = str(Path(di["directory"])
+                                         / Path(di["filename"]))
                     self.diagnostics.append(
                         diagnostic_class(owner=self, input_data=di))
 
@@ -270,13 +286,17 @@ class Simulation:
         Unused stub for future implementation"""
         pass
 
-    def find_tool_by_name(self, tool_name: str):
+    def find_tool_by_name(self, tool_name: str, custom_name: str = None):
         """Returns the :class:`ComputeTool` associated with the
         given name"""
-        tools = [t for t in self.compute_tools if t.name == tool_name]
+        tools = [t for t in self.compute_tools if t.name == tool_name 
+                 and t.custom_name == custom_name]
         if len(tools) == 1:
             return tools[0]
         return None
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
 
 
 class DynamicFactory(ABC):
@@ -340,7 +360,7 @@ class PhysicsModule(DynamicFactory):
 
     Parameters
     ----------
-    _registery : dict
+    _registry : dict
         Registered derived ComputeTool classes.
     _factory_type_name : str
         Type of PhysicsModule child class
@@ -420,6 +440,9 @@ class PhysicsModule(DynamicFactory):
         """
         pass
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
+
 
 class ComputeTool(DynamicFactory):
     """This is the base class for compute tools
@@ -437,7 +460,7 @@ class ComputeTool(DynamicFactory):
 
     Attributes
     ----------
-    _registery : dict
+    _registry : dict
         Registered derived ComputeTool classes.
     _factory_type_name : str
         Type of ComputeTool child class
@@ -448,6 +471,10 @@ class ComputeTool(DynamicFactory):
         object such as its name.
     name : str
         Type of ComputeTool.
+    custom_name: str
+        Name given to individual instance of tool, optional.
+        Used when multiple tools of the same type exist in one 
+        :class:`Simulation`.
     """
 
     _factory_type_name = "Compute Tool"
@@ -457,10 +484,16 @@ class ComputeTool(DynamicFactory):
         self.owner = owner
         self.input_data = input_data
         self.name = input_data["type"]
+        self.custom_name = None
+        if "custom_name" in input_data:
+            self.custom_name = input_data["custom_name"]
 
     def initialize(self):
         """Perform any initialization operations needed for this tool"""
         pass
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
 
 
 class SimulationClock:
@@ -509,6 +542,7 @@ class SimulationClock:
 
     def __init__(self, owner: Simulation, clock_data: dict):
         self.owner = owner
+        self.clock_data = clock_data
         self.start_time = clock_data["start_time"]
         self.time = self.start_time
         self.end_time = clock_data["end_time"]
@@ -520,8 +554,8 @@ class SimulationClock:
         if "num_steps" in clock_data:
             self.num_steps = clock_data["num_steps"]
             self.dt = (
-                    (clock_data["end_time"] - clock_data["start_time"])
-                    / clock_data["num_steps"])
+                (clock_data["end_time"] - clock_data["start_time"])
+                / clock_data["num_steps"])
         elif "dt" in clock_data:
             self.dt = clock_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
@@ -540,6 +574,9 @@ class SimulationClock:
     def is_running(self):
         """Check if time is less than end time"""
         return self.this_step < self.num_steps
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.clock_data})"
 
 
 class Grid:
@@ -578,7 +615,7 @@ class Grid:
         Array of evenly spaced Grid values.
     cell_centers : float
         Value of the coordinate in the middle of each Grid cell.
-    cell_widths : float
+    cell_widths : :class:`numpy.ndarray`
         Width of each cell in the Grid.
     r_inv : float
         Inverse of coordinate values at each Grid point,
@@ -590,16 +627,22 @@ class Grid:
         self.r_max = None
         self.num_points = None
         self.dr = None
-        self.parse_grid_data()
+        self.coordinate_system = "cartesian"
+        self.r = None
+        self.cell_edges = None
+        self.cell_centers = None
+        self.cell_widths = None
+        self.r_inv = None
 
-        self.r = (self.r_min + (self.r_max - self.r_min) *
-                  self.generate_linear())
-        self.cell_edges = self.r
-        self.cell_centers = (self.r[1:] + self.r[:-1]) / 2
-        self.cell_widths = (self.r[1:] - self.r[:-1])
-        with np.errstate(divide='ignore'):
-            self.r_inv = 1 / self.r
-            self.r_inv[self.r_inv==np.inf] = 0
+        self.cell_volumes = None
+        self.inverse_cell_volumes = None
+        self.interface_areas = None
+        self.interface_volumes = None
+        self.inverse_interface_volumes = None
+
+        self.parse_grid_data()
+        self.set_grid_points()
+        self.set_volume_and_area_elements()
 
     def parse_grid_data(self):
         """
@@ -620,11 +663,16 @@ class Grid:
         else:
             self.set_value_from_keys("dr", {"dr", "dx"})
             self.num_points = 1 + (self.r_max - self.r_min) / self.dr
-            if not (self.num_points % 1 == 0):
+            if not self.num_points % 1 == 0:
                 raise (RuntimeError("Invalid grid spacing: "
                                     "configuration does not imply "
                                     "integer number of grid points"))
             self.num_points = np.int(self.num_points)
+
+        # set the coordinate system
+        if "coordinate_system" in self.grid_data:
+            self.coordinate_system = self.grid_data["coordinate_system"]
+        self.coordinate_system = self.coordinate_system.lower().strip()
 
     def set_value_from_keys(self, var_name, options):
         """
@@ -651,7 +699,18 @@ class Grid:
         raise (KeyError("Grid configuration for " + var_name
                         + " not found."))
 
-    def generate_field(self, num_components=1, placement_of_points="edge-centered"):
+    def set_grid_points(self):
+        self.r = (self.r_min + (self.r_max - self.r_min) *
+                  self.generate_linear())
+        self.cell_edges = self.r
+        self.cell_centers = (self.r[1:] + self.r[:-1]) / 2
+        self.cell_widths = (self.r[1:] - self.r[:-1])
+        with np.errstate(divide='ignore'):
+            self.r_inv = 1 / self.r
+            self.r_inv[self.r_inv == np.inf] = 0
+
+    def generate_field(self, num_components=1,
+                       placement_of_points="edge-centered"):
         """Returns squeezed :class:`numpy.ndarray` of zeros with
         dimensions :class:`Grid.num_points` and `num_components`.
 
@@ -732,6 +791,61 @@ class Grid:
 
             return interpval
 
+    def set_volume_and_area_elements(self):
+        if self.coordinate_system == 'cartesian':
+            self.set_cartesian_volumes()
+            self.set_cartesian_areas()
+        elif self.coordinate_system == 'cylindrical':
+            self.set_cylindrical_volumes()
+            self.set_cylindrical_areas()
+        elif self.coordinate_system == 'spherical':
+            self.set_spherical_volumes()
+            self.set_spherical_areas()
+        else:
+            raise ValueError(f'Coordinate system '
+                             f'{self.coordinate_system} is undefined')
+        self.set_interface_volumes()
+
+    def set_cartesian_volumes(self):
+        self.cell_volumes = self.cell_edges[1:] - self.cell_edges[:-1]
+        self.inverse_cell_volumes = 1./self.cell_volumes
+
+    def set_cylindrical_volumes(self):
+        scratch = self.cell_edges ** 2
+        self.cell_volumes = np.pi * (scratch[1:] - scratch[:-1])
+        self.inverse_cell_volumes = 1./self.cell_volumes
+
+    def set_spherical_volumes(self):
+        scratch = self.cell_edges ** 3
+        self.cell_volumes = 4/3 * np.pi * (scratch[1:] - scratch[:-1])
+        self.inverse_cell_volumes = 1./self.cell_volumes
+
+    def set_cartesian_areas(self):
+        self.interface_areas = np.ones_like(self.cell_edges)
+
+    def set_cylindrical_areas(self):
+        self.interface_areas = 2.0 * np.pi * self.cell_edges
+
+    def set_spherical_areas(self):
+        self.interface_areas = 4.0 * np.pi * self.cell_edges ** 2
+
+    def set_interface_volumes(self):
+        self.interface_volumes = np.zeros_like(self.cell_edges)
+        self.inverse_interface_volumes = np.zeros_like(self.interface_volumes)
+
+        self.interface_volumes[0] = self.cell_volumes[0]
+        self.interface_volumes[1:-1] = 0.5 * (self.cell_volumes[1:]
+                                              + self.cell_volumes[0:-1])
+        self.interface_volumes[-1] = self.cell_volumes[-1]
+
+        self.inverse_interface_volumes[0] = self.inverse_cell_volumes[0]
+        self.inverse_interface_volumes[1:-1] = 0.5 * (self.inverse_cell_volumes[1:]
+                                                      + self.inverse_cell_volumes[0:-1])
+        self.inverse_interface_volumes[-1] = self.inverse_cell_volumes[-1]
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.grid_data})"
+
 
 class Diagnostic(DynamicFactory):
     """Base diagnostic class.
@@ -807,3 +921,6 @@ class Diagnostic(DynamicFactory):
         complete.
         """
         pass
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.input_data})"
