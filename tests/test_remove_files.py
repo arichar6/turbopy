@@ -4,7 +4,7 @@ import shutil
 
 
 def test_should_remove_files():
-    """Finds the parent directory (turbopy) and removes the specified files"""
+    """Finds the parent directory (turbopy) and removes the specified folders"""
     parent = Path(__file__).parents[1]
     if Path(f"{parent}/tmp").is_dir():
         shutil.rmtree(Path(f"{parent}/tmp").resolve())
