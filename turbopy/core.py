@@ -607,8 +607,8 @@ class Grid:
 
     Attributes
     ----------
-    _input_dta : dict
-        Dictionary containg parameters needed to defined the grid.
+    _input_data : dict
+        Dictionary containing parameters needed to defined the grid.
         Currently only 1D grids are defined in turboPy.
     r_min: float, None
         Min of the Grid range.
