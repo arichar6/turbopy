@@ -23,7 +23,7 @@ html_show_copyright = False
 author = 'Steve Richardson'
 
 # The full version, including alpha/beta/rc tags
-release = 'v2020.02.21'
+release = 'v2020.08.25'
 
 
 # -- General configuration ---------------------------------------------------
