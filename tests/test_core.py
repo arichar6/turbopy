@@ -1,6 +1,5 @@
 """Tests for turbopy/core.py"""
 import pytest
-import numpy as np
 from turbopy.core import *
 
 
@@ -9,9 +8,13 @@ class ExampleTool(ComputeTool):
 
 
 class ExampleModule(PhysicsModule):
-    """Example PhysicModule subclass for tests"""
+    """Example PhysicsModule subclass for tests"""
     def update(self):
         pass
+    
+    def inspect_resource(self, resource: dict):
+        for attribute in resource:
+            self.__setattr__(attribute, resource[attribute])
 
 
 class ExampleDiagnostic(Diagnostic):
@@ -20,6 +23,8 @@ class ExampleDiagnostic(Diagnostic):
         pass
 
 
+PhysicsModule.register("ExampleModule", ExampleModule)
+ComputeTool.register("ExampleTool", ExampleTool)
 Diagnostic.register("ExampleDiagnostic", ExampleDiagnostic)
 
 
@@ -86,7 +91,7 @@ def test_read_grid_from_input_should_set_grid_attr_when_called(simple_sim):
 def test_read_clock_from_input_should_set_clock_attr_when_called(simple_sim):
     """Test read_clock_from_input method in Simulation class"""
     simple_sim.read_clock_from_input()
-    assert simple_sim.clock.owner == simple_sim
+    assert simple_sim.clock._owner == simple_sim
     assert simple_sim.clock.start_time == 0
     assert simple_sim.clock.time == 0
     assert simple_sim.clock.end_time == 10
@@ -108,12 +113,11 @@ def test_read_clock_from_input_should_set_clock_attr_when_called(simple_sim):
 
 def test_read_tools_from_input_should_set_tools_attr_when_called(simple_sim):
     """Test read_tools_from_input method in Simulation class"""
-    ComputeTool.register("ExampleTool", ExampleTool)
     simple_sim.read_tools_from_input()
-    assert simple_sim.compute_tools[0].owner == simple_sim
-    assert simple_sim.compute_tools[0].input_data == {"type": "ExampleTool", "custom_name": "example"}
-    assert simple_sim.compute_tools[1].owner == simple_sim
-    assert simple_sim.compute_tools[1].input_data == {"type": "ExampleTool", "custom_name": "example2"}
+    assert simple_sim.compute_tools[0]._owner == simple_sim
+    assert simple_sim.compute_tools[0]._input_data == {"type": "ExampleTool", "custom_name": "example"}
+    assert simple_sim.compute_tools[1]._owner == simple_sim
+    assert simple_sim.compute_tools[1]._input_data == {"type": "ExampleTool", "custom_name": "example2"}
 
 
 def test_fundamental_cycle_should_advance_clock_when_called(simple_sim):
@@ -126,7 +130,6 @@ def test_fundamental_cycle_should_advance_clock_when_called(simple_sim):
 
 def test_run_should_run_simulation_while_clock_is_running(simple_sim):
     """Test run method in Simulation class"""
-    PhysicsModule.register("ExampleModule", ExampleModule)
     simple_sim.run()
     assert simple_sim.clock.this_step == 100
     assert simple_sim.clock.time == 10
@@ -135,24 +138,24 @@ def test_run_should_run_simulation_while_clock_is_running(simple_sim):
 def test_read_modules_from_input_should_set_modules_attr_when_called(simple_sim):
     """Test read_modules_from_input method in Simulation calss"""
     simple_sim.read_modules_from_input()
-    assert simple_sim.physics_modules[0].owner == simple_sim
-    assert simple_sim.physics_modules[0].input_data == {"name": "ExampleModule"}
+    assert simple_sim.physics_modules[0]._owner == simple_sim
+    assert simple_sim.physics_modules[0]._input_data == {"name": "ExampleModule"}
 
 def test_find_tool_by_name_should_identify_one_tool(simple_sim):
     simple_sim.read_tools_from_input()
     tool = simple_sim.find_tool_by_name("ExampleTool", "example")
     tool2 = simple_sim.find_tool_by_name("ExampleTool", "example2")
 
-    assert tool.input_data["type"] == "ExampleTool"
-    assert tool.input_data["custom_name"] == "example"
-    assert tool2.input_data["type"] == "ExampleTool"
-    assert tool2.input_data["custom_name"] == "example2"
+    assert tool._input_data["type"] == "ExampleTool"
+    assert tool._input_data["custom_name"] == "example"
+    assert tool2._input_data["type"] == "ExampleTool"
+    assert tool2._input_data["custom_name"] == "example2"
 
 
 def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_sim):
     """Test read_diagnostic_from_input method in Simulation class"""
     simple_sim.read_diagnostics_from_input()
-    input_data = simple_sim.diagnostics[0].input_data
+    input_data = simple_sim.diagnostics[0]._input_data
     assert input_data["directory"] == str(Path("default_output"))
     assert input_data["filename"] == str(Path("default_output")
                                          / Path("clock0.out"))
@@ -161,10 +164,10 @@ def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_si
 def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_sim):
     """Test read_diagnostic_from_input method in Simulation class"""
     simple_sim.read_diagnostics_from_input()
-    assert simple_sim.diagnostics[0].input_data["directory"] == str(Path("default_output"))
-    assert simple_sim.diagnostics[0].input_data["filename"] == str(Path("default_output")
+    assert simple_sim.diagnostics[0]._input_data["directory"] == str(Path("default_output"))
+    assert simple_sim.diagnostics[0]._input_data["filename"] == str(Path("default_output")
                                                                    / Path("clock0.out"))
-    input_data = simple_sim.diagnostics[2].input_data
+    input_data = simple_sim.diagnostics[2]._input_data
     assert input_data["directory"] == str(Path("default_output"))
     assert input_data["filename"] == str(Path("default_output")
                                          / Path("ExampleDiagnostic1.out"))

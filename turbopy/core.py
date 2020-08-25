@@ -360,10 +360,6 @@ class PhysicsModule(DynamicFactory):
 
     Parameters
     ----------
-    _registry : dict
-        Registered derived ComputeTool classes.
-    _factory_type_name : str
-        Type of PhysicsModule child class
     owner : :class:`Simulation`
         Simulation class that PhysicsModule belongs to.
     input_data : dict
@@ -372,21 +368,25 @@ class PhysicsModule(DynamicFactory):
 
     Attributes
     ----------
-    owner : :class:`Simulation`
+    _owner : :class:`Simulation`
         Simulation class that PhysicsModule belongs to.
-    module_type : None
+    _module_type : None
         Module type.
-    input_data : dict
+    _input_data : dict
        Dictionary that contains user defined parameters about this
        object such as its name.
+    _registry : dict
+        Registered derived ComputeTool classes.
+    _factory_type_name : str
+        Type of PhysicsModule child class.
     """
     _factory_type_name = "Physics Module"
     _registry = {}
 
     def __init__(self, owner: Simulation, input_data: dict):
-        self.owner = owner
-        self.module_type = None
-        self.input_data = input_data
+        self._owner = owner
+        self._module_type = None
+        self._input_data = input_data
 
     def publish_resource(self, resource: dict):
         """
@@ -397,9 +397,9 @@ class PhysicsModule(DynamicFactory):
         resource : dict
             resource dictionary to be shared
         """
-        for physics_module in self.owner.physics_modules:
+        for physics_module in self._owner.physics_modules:
             physics_module.inspect_resource(resource)
-        for diagnostic in self.owner.diagnostics:
+        for diagnostic in self._owner.diagnostics:
             diagnostic.inspect_resource(resource)
 
     def inspect_resource(self, resource: dict):
@@ -419,7 +419,10 @@ class PhysicsModule(DynamicFactory):
         This is the function where you call publish_resource, to tell
         other physics modules about data you want to share.
         """
-        pass
+        shared = {f'{self.__class__}_{attribute}': value for attribute, value
+                  in self.__dict__.items()
+                  if not attribute.startswith('_')}
+        self.publish_resource(shared)
 
     def update(self):
         """Do the main work of the PhysicsModule
@@ -441,7 +444,7 @@ class PhysicsModule(DynamicFactory):
         pass
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.input_data})"
+        return f"{self.__class__.__name__}({self._input_data})"
 
 
 class ComputeTool(DynamicFactory):
@@ -464,9 +467,9 @@ class ComputeTool(DynamicFactory):
         Registered derived ComputeTool classes.
     _factory_type_name : str
         Type of ComputeTool child class
-    owner : :class:`Simulation`
+    _owner : :class:`Simulation`
         Simulation class that ComputeTool belongs to.
-    input_data : dict
+    _input_data : dict
         Dictionary that contains user defined parameters about this
         object such as its name.
     name : str
@@ -481,8 +484,8 @@ class ComputeTool(DynamicFactory):
     _registry = {}
 
     def __init__(self, owner: Simulation, input_data: dict):
-        self.owner = owner
-        self.input_data = input_data
+        self._owner = owner
+        self._input_data = input_data
         self.name = input_data["type"]
         self.custom_name = None
         if "custom_name" in input_data:
@@ -493,7 +496,7 @@ class ComputeTool(DynamicFactory):
         pass
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.input_data})"
+        return f"{self.__class__.__name__}({self._input_data})"
 
 
 class SimulationClock:
@@ -504,7 +507,7 @@ class SimulationClock:
     ----------
     owner : :class:`Simulation`
         Simulation class that SimulationClock belongs to.
-    clock_data : dict
+    input_data : dict
         Dictionary of parameters needed to define the simulation
         clock.
 
@@ -522,8 +525,12 @@ class SimulationClock:
 
     Attributes
     ----------
-    owner : :class:`Simulation`
+    _owner : :class:`Simulation`
         Simulation class that SimulationClock belongs to.
+    _input_data : dict
+        Dictionary of parameters needed to define the simulation
+        clock.
+    
     start_time : float
         Clock start time.
     time : float
@@ -540,24 +547,24 @@ class SimulationClock:
         Time passed at each increment.
     """
 
-    def __init__(self, owner: Simulation, clock_data: dict):
-        self.owner = owner
-        self.clock_data = clock_data
-        self.start_time = clock_data["start_time"]
+    def __init__(self, owner: Simulation, input_data: dict):
+        self._owner = owner
+        self._input_data = input_data
+        self.start_time = input_data["start_time"]
         self.time = self.start_time
-        self.end_time = clock_data["end_time"]
+        self.end_time = input_data["end_time"]
         self.this_step = 0
         self.print_time = False
-        if "print_time" in clock_data:
-            self.print_time = clock_data["print_time"]
+        if "print_time" in input_data:
+            self.print_time = input_data["print_time"]
 
-        if "num_steps" in clock_data:
-            self.num_steps = clock_data["num_steps"]
+        if "num_steps" in input_data:
+            self.num_steps = input_data["num_steps"]
             self.dt = (
-                (clock_data["end_time"] - clock_data["start_time"])
-                / clock_data["num_steps"])
-        elif "dt" in clock_data:
-            self.dt = clock_data["dt"]
+                (input_data["end_time"] - input_data["start_time"])
+                / input_data["num_steps"])
+        elif "dt" in input_data:
+            self.dt = input_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
             if not np.isclose(self.num_steps, np.rint(self.num_steps)):
                 raise RuntimeError("Simulation interval is not an "
@@ -576,7 +583,7 @@ class SimulationClock:
         return self.this_step < self.num_steps
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.clock_data})"
+        return f"{self.__class__.__name__}({self._input_data})"
 
 
 class Grid:
@@ -584,7 +591,7 @@ class Grid:
 
     Parameters
     ----------
-    grid_data : dict
+    input_data : dict
         Dictionary containg parameters needed to defined the grid.
         Currently only 1D grids are defined in turboPy.
 
@@ -600,7 +607,7 @@ class Grid:
 
     Attributes
     ----------
-    grid_data : dict
+    _input_dta : dict
         Dictionary containg parameters needed to defined the grid.
         Currently only 1D grids are defined in turboPy.
     r_min: float, None
@@ -621,8 +628,8 @@ class Grid:
         Inverse of coordinate values at each Grid point,
         1/:class:`Grid.r`.
     """
-    def __init__(self, grid_data: dict):
-        self.grid_data = grid_data
+    def __init__(self, input_data: dict):
+        self._input_data = input_data
         self.r_min = None
         self.r_max = None
         self.num_points = None
@@ -647,7 +654,7 @@ class Grid:
     def parse_grid_data(self):
         """
         Initializes the grid spacing, range, and number of points on the
-        grid from :class:`Grid.grid_data`.
+        grid from :class:`Grid._input_data`.
 
         Raises
         ------
@@ -657,8 +664,8 @@ class Grid:
         """
         self.set_value_from_keys("r_min", {"min", "x_min", "r_min"})
         self.set_value_from_keys("r_max", {"max", "x_max", "r_max"})
-        if "N" in self.grid_data:
-            self.num_points = self.grid_data["N"]
+        if "N" in self._input_data:
+            self.num_points = self._input_data["N"]
             self.dr = (self.r_max - self.r_min) / (self.num_points - 1)
         else:
             self.set_value_from_keys("dr", {"dr", "dx"})
@@ -670,31 +677,31 @@ class Grid:
             self.num_points = np.int(self.num_points)
 
         # set the coordinate system
-        if "coordinate_system" in self.grid_data:
-            self.coordinate_system = self.grid_data["coordinate_system"]
+        if "coordinate_system" in self._input_data:
+            self.coordinate_system = self._input_data["coordinate_system"]
         self.coordinate_system = self.coordinate_system.lower().strip()
 
     def set_value_from_keys(self, var_name, options):
         """
         Initializes a specified attribute to a value provided in
-        :class:`Grid.grid_data`.
+        :class:`Grid._input_data`.
 
         Parameters
         ----------
         var_name : str
             Attribute name to be initialized.
         options : set
-            Set of keys in :class:`Grid.grid_data` to search for values.
+            Set of keys in :class:`Grid._input_data` to search for values.
 
         Raises
         ------
         KeyError
             If none of the keys in `options` are present in
-            :class:`Grid.grid_data`.
+            :class:`Grid._input_data`.
         """
         for name in options:
-            if name in self.grid_data:
-                setattr(self, var_name, self.grid_data[name])
+            if name in self._input_data:
+                setattr(self, var_name, self._input_data[name])
                 return
         raise (KeyError("Grid configuration for " + var_name
                         + " not found."))
@@ -844,7 +851,7 @@ class Grid:
         self.inverse_interface_volumes[-1] = self.inverse_cell_volumes[-1]
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.grid_data})"
+        return f"{self.__class__.__name__}({self._input_data})"
 
 
 class Diagnostic(DynamicFactory):
@@ -864,9 +871,9 @@ class Diagnostic(DynamicFactory):
         Type of DynamicFactory child class
     _registry: dict
         Registered derived Diagnostic classes
-    owner: Simulation
+    _owner: Simulation
         The Simulation object that contains this object
-    input_data: dict
+    _input_data: dict
         Dictionary that contains user defined parameters about this
         object such as its name.
     """
@@ -875,8 +882,8 @@ class Diagnostic(DynamicFactory):
     _registry = {}
 
     def __init__(self, owner: Simulation, input_data: dict):
-        self.owner = owner
-        self.input_data = input_data
+        self._owner = owner
+        self._input_data = input_data
 
     def inspect_resource(self, resource: dict):
         """Save references to data from other PhysicsModules
@@ -923,4 +930,4 @@ class Diagnostic(DynamicFactory):
         pass
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.input_data})"
+        return f"{self.__class__.__name__}({self._input_data})"
