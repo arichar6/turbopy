@@ -83,7 +83,7 @@ class PointDiagnostic(Diagnostic):
         Field as dictated by resource.
     output_function : function, None
         Function for assigned output method: standard output or csv.
-    csv : :class:'numpy.ndarray', None
+    csv : :class:`numpy.ndarray`, None
         numpy.ndarray being written as a csv file.
     """
     def __init__(self, owner: Simulation, input_data: dict):
@@ -128,7 +128,7 @@ class PointDiagnostic(Diagnostic):
     def initialize(self):
         """
         Initialize output function if provided as csv, and self.csv
-        as an instance of the :class: 'CSVOuputUtility' class.
+        as an instance of the :class:`CSVOuputUtility` class.
         """
         # set up function to interpolate the field value
         self.get_value = self._owner.grid.create_interpolator(
@@ -258,9 +258,9 @@ class FieldDiagnostic(Diagnostic):
 
     def initialize(self):
         """
-        Initalize diagnostic_size and output function if provided as
+        Initialize diagnostic_size and output function if provided as
         csv, and self.csv as an instance of the
-        :class:'CSVOutputUtility' class.
+        :class:`CSVOutputUtility` class.
         """
         if not self.field_was_found:
             raise (RuntimeError(f"Diagnostic field {self.field_name}"
@@ -275,7 +275,7 @@ class FieldDiagnostic(Diagnostic):
                 self._owner.clock.end_time / self.dump_interval) + 1),
                 self.field.shape[0])
 
-            # setup output method
+        # setup output method
         functions = {"stdout": self.print_diagnose,
                      "csv": self.csv_diagnose,
                      }
@@ -348,7 +348,7 @@ class ClockDiagnostic(Diagnostic):
     Parameters
     ----------
     owner : Simulation
-        The 'Simulation' object that contains this object
+        The :class:`Simulation` object that contains this object
     input_data : dict
         Dictionary containing information about this diagnostic such as
         its name
@@ -356,13 +356,13 @@ class ClockDiagnostic(Diagnostic):
     Attributes
     ----------
     owner : Simulation
-        The 'Simulation' object that contains this object
+        The :class:`Simulation` object that contains this object
     input_data : dict
         Dictionary containing information about this diagnostic such as
         its name
     filename : str
         File name for CSV time file
-    csv : :class:'numpy.ndarray'
+    csv : :class:`numpy.ndarray`
         Array to store values to be written into a CSV file
     """
 
@@ -376,8 +376,8 @@ class ClockDiagnostic(Diagnostic):
         self.csv.append(self._owner.clock.time)
 
     def initialize(self):
-        """Initialize 'self.csv' as an instance of the
-        :class:'CSVOuputUtility' class."""
+        """Initialize `self.csv` as an instance of the
+        :class:`CSVOuputUtility` class."""
         diagnostic_size = (self._owner.clock.num_steps + 1, 1)
         self.csv = CSVOutputUtility(self._input_data["filename"],
                                     diagnostic_size)
