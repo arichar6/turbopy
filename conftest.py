@@ -4,9 +4,9 @@ import pytest
 
 
 def pytest_unconfigure():
-    """Finds the parent directory (turbopy) and removes the specified folders"""
+    """Locates and removes the specified directories after testing"""
+    directories = ["tmp", "default_output"]
     parent = Path(__file__).parents[0]
-    if Path(f"{parent}/tmp").is_dir():
-        shutil.rmtree(Path(f"{parent}/tmp").resolve())
-    if Path(f"{parent}/default_output").is_dir():
-        shutil.rmtree(Path(f"{parent}/default_output").resolve())
+    for file in directories:
+        if Path(f"{parent}/{file}").is_dir():
+            shutil.rmtree(Path(f"{parent}/{file}").resolve())
