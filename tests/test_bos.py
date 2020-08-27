@@ -4,9 +4,11 @@ This integration test simply runs the block_on_spring app and compares the outpu
 to "good" output.
 """
 import numpy as np
+import pytest
+import shutil
 
 
-def test_bos_forwardeuler(bos_run):
+def test_bos_forwardeuler(bos_run, tmp_path):
     """Tests block_on_spring app with ForwardEuler ComputeTool and compares to
     output files with a "good" output.
     """
@@ -14,7 +16,7 @@ def test_bos_forwardeuler(bos_run):
     for filename in ['block_p', 'block_x', 'time']:
         ref_data = np.genfromtxt(f'tests/fixtures/block_on_spring/output_forwardeuler/{filename}.csv',
                                  delimiter=',')
-        tmp_data = np.genfromtxt(f'tmp/block_on_spring/output_forwardeuler/{filename}.csv',
+        tmp_data = np.genfromtxt(f'tmp_path/block_on_spring/output_forwardeuler/{filename}.csv',
                                  delimiter=',')
         assert np.allclose(ref_data, tmp_data, rtol=1e-05, atol=1e-08)
 
@@ -27,7 +29,7 @@ def test_bos_backwardeuler(bos_run):
     for filename in ['block_p', 'block_x', 'time']:
         ref_data = np.genfromtxt(f'tests/fixtures/block_on_spring/output_backwardeuler/{filename}.csv',
                                  delimiter=',')
-        tmp_data = np.genfromtxt(f'tmp/block_on_spring/output_backwardeuler/{filename}.csv',
+        tmp_data = np.genfromtxt(f'tmp_path/block_on_spring/output_backwardeuler/{filename}.csv',
                                  delimiter=',')
         assert np.allclose(ref_data, tmp_data, rtol=1e-05, atol=1e-08)
 
@@ -40,6 +42,10 @@ def test_bos_leapfrog(bos_run):
     for filename in ['block_p', 'block_x', 'time']:
         ref_data = np.genfromtxt(f'tests/fixtures/block_on_spring/output_leapfrog/{filename}.csv',
                                  delimiter=',')
-        tmp_data = np.genfromtxt(f'tmp/block_on_spring/output_leapfrog/{filename}.csv',
+        tmp_data = np.genfromtxt(f'tmp_path/block_on_spring/output_leapfrog/{filename}.csv',
                                  delimiter=',')
         assert np.allclose(ref_data, tmp_data, rtol=1e-05, atol=1e-08)
+
+
+def test_should_remove_tmp_path_directory():
+    shutil.rmtree("tmp_path")
