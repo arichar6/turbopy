@@ -1,5 +1,6 @@
 """Tests for turbopy/core.py"""
 import pytest
+import shutil
 from turbopy.core import *
 
 
@@ -171,6 +172,8 @@ def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_
     assert input_data["directory"] == str(Path("default_output"))
     assert input_data["filename"] == str(Path("default_output")
                                          / Path("ExampleDiagnostic1.out"))
+    parent = Path(__file__).parents[1]
+    shutil.move("default_output", f"{parent}/tmp_path")
 
 
 # Grid class test methods
