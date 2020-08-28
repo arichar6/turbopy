@@ -132,7 +132,7 @@ ComputeTool.register("Leapfrog", Leapfrog)
 
 
 @pytest.fixture
-def bos_run(tmp_path):
+def bos_run():
     # Note: grid isn't used, but "gridless" sims aren't an option yet
     problem_config = {
         "Grid": {"N": 2, "x_min": 0, "x_max": 1},
@@ -155,7 +155,7 @@ def bos_run(tmp_path):
         },
         "Diagnostics": {
             # default values come first
-            "directory": "tmp_path/block_on_spring/output_leapfrog/",
+            "directory": "block_on_spring/output_leapfrog/",
             "output_type": "csv",
             "clock": {"filename": "time.csv"},
             "BlockDiagnostic": [
@@ -165,15 +165,4 @@ def bos_run(tmp_path):
         }
     }
 
-    sim = Simulation(problem_config)
-    sim.run()
-
-    problem_config["PhysicsModules"]["BlockOnSpring"]["pusher"] = "BlockForwardEuler"
-    problem_config["Diagnostics"]["directory"] = "tmp_path/block_on_spring/output_forwardeuler/"
-    sim = Simulation(problem_config)
-    sim.run()
-
-    problem_config["PhysicsModules"]["BlockOnSpring"]["pusher"] = "BackwardEuler"
-    problem_config["Diagnostics"]["directory"] = "tmp_path/block_on_spring/output_backwardeuler/"
-    sim = Simulation(problem_config)
-    sim.run()
+    return problem_config
