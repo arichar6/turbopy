@@ -1,5 +1,6 @@
 """Tests for turbopy/core.py"""
 import pytest
+import shutil
 from turbopy.core import *
 
 
@@ -152,16 +153,17 @@ def test_find_tool_by_name_should_identify_one_tool(simple_sim):
     assert tool2._input_data["custom_name"] == "example2"
 
 
-def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_sim):
+def test_default_diagnostic_filename_is_generated_if_no_name_specified(simple_sim, tmp_path):
     """Test read_diagnostic_from_input method in Simulation class"""
     simple_sim.read_diagnostics_from_input()
     input_data = simple_sim.diagnostics[0]._input_data
     assert input_data["directory"] == str(Path("default_output"))
     assert input_data["filename"] == str(Path("default_output")
                                          / Path("clock0.out"))
+    shutil.move("default_output", tmp_path)
 
 
-def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_sim):
+def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_sim, tmp_path):
     """Test read_diagnostic_from_input method in Simulation class"""
     simple_sim.read_diagnostics_from_input()
     assert simple_sim.diagnostics[0]._input_data["directory"] == str(Path("default_output"))
@@ -171,6 +173,7 @@ def test_default_diagnostic_filename_increments_for_multiple_diagnostics(simple_
     assert input_data["directory"] == str(Path("default_output"))
     assert input_data["filename"] == str(Path("default_output")
                                          / Path("ExampleDiagnostic1.out"))
+    shutil.move("default_output", tmp_path)
 
 
 # Grid class test methods

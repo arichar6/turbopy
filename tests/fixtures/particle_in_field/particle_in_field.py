@@ -133,7 +133,7 @@ class ForwardEuler(ComputeTool):
 
 
 @pytest.fixture
-def pif_run():
+def pif_sim():
     PhysicsModule.register("EMWave", EMWave)
     PhysicsModule.register("ChargedParticle", ChargedParticle)
     Diagnostic.register("ParticleDiagnostic", ParticleDiagnostic)
@@ -141,4 +141,4 @@ def pif_run():
     ComputeTool.register("ForwardEuler", ForwardEuler)
     input_file = "tests/fixtures/particle_in_field/particle_in_field.toml"
     sim = construct_simulation_from_toml(input_file)
-    sim.run()
+    return sim

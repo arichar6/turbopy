@@ -155,7 +155,7 @@ def bos_run():
         },
         "Diagnostics": {
             # default values come first
-            "directory": "tmp/block_on_spring/output_leapfrog/",
+            "directory": "block_on_spring/output_leapfrog/",
             "output_type": "csv",
             "clock": {"filename": "time.csv"},
             "BlockDiagnostic": [
@@ -165,15 +165,4 @@ def bos_run():
         }
     }
 
-    sim = Simulation(problem_config)
-    sim.run()
-
-    problem_config["PhysicsModules"]["BlockOnSpring"]["pusher"] = "BlockForwardEuler"
-    problem_config["Diagnostics"]["directory"] = "tmp/block_on_spring/output_forwardeuler/"
-    sim = Simulation(problem_config)
-    sim.run()
-
-    problem_config["PhysicsModules"]["BlockOnSpring"]["pusher"] = "BackwardEuler"
-    problem_config["Diagnostics"]["directory"] = "tmp/block_on_spring/output_backwardeuler/"
-    sim = Simulation(problem_config)
-    sim.run()
+    return problem_config
