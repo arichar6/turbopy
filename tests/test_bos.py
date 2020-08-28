@@ -46,6 +46,3 @@ def test_bos_leapfrog(bos_run):
                                  delimiter=',')
         assert np.allclose(ref_data, tmp_data, rtol=1e-05, atol=1e-08)
 
-
-def test_should_remove_tmp_path_directory():
-    shutil.rmtree("tmp_path")
