@@ -5,7 +5,6 @@ to "good" output.
 """
 import numpy as np
 import pytest
-import shutil
 
 
 def test_bos_forwardeuler(bos_run, tmp_path):

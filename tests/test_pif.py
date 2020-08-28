@@ -4,7 +4,6 @@ This integration test simply runs the particle_in_field app and compares the out
 to "good" output.
 """
 import numpy as np
-import shutil
 
 def test_pif(pif_run):
     for filename in ['e_0.5', 'grid', 'particle_p', 'particle_x', 'time']:
