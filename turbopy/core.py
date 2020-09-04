@@ -252,13 +252,8 @@ class Simulation:
                       self.input_data["Diagnostics"].items()
                       if not Diagnostic.is_valid_name(k)}
 
-            if "directory" in params:
-                d = Path(params["directory"])
-            else:
-                # Set a default output directory
-                d = Path("default_output")
-                params["directory"] = str(d)
-            d.mkdir(parents=True, exist_ok=True)
+            if "directory" not in params:
+                params["directory"] = str(Path("default_output"))
 
             for diag_type, d in diags.items():
                 diagnostic_class = Diagnostic.lookup(diag_type)
@@ -940,9 +935,12 @@ class Diagnostic(DynamicFactory):
     def initialize(self):
         """Perform any initialization operations
 
-        This gets called once before the main simulation loop.
+        This gets called once before the main simulation loop. Base class
+        definition creates output directory if it does not already exist. If
+        subclass overrides this function, call `super().initialize()`
         """
-        pass
+        d = Path(self._input_data["directory"])
+        d.mkdir(parents=True, exist_ok=True)
 
     def finalize(self):
         """Perform any finalization operations

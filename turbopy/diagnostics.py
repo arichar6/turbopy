@@ -131,6 +131,7 @@ class PointDiagnostic(Diagnostic):
         as an instance of the :class:`CSVOuputUtility` class.
         """
         # set up function to interpolate the field value
+        super().initialize()
         self.get_value = self._owner.grid.create_interpolator(
                                 self.location)
 
@@ -262,6 +263,7 @@ class FieldDiagnostic(Diagnostic):
         csv, and self.csv as an instance of the
         :class:`CSVOutputUtility` class.
         """
+        super().initialize()
         if not self.field_was_found:
             raise (RuntimeError(f"Diagnostic field {self.field_name}"
                                 " was not found"))
@@ -337,6 +339,7 @@ class GridDiagnostic(Diagnostic):
 
     def initialize(self):
         """Save grid data into CSV file"""
+        super().initialize()
         with open(self.filename, 'wb') as f:
             np.savetxt(f, self._owner.grid.r, delimiter=",")
 
@@ -378,6 +381,7 @@ class ClockDiagnostic(Diagnostic):
     def initialize(self):
         """Initialize `self.csv` as an instance of the
         :class:`CSVOuputUtility` class."""
+        super().initialize()
         diagnostic_size = (self._owner.clock.num_steps + 1, 1)
         self.csv = CSVOutputUtility(self._input_data["filename"],
                                     diagnostic_size)
