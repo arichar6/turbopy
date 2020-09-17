@@ -227,11 +227,12 @@ class Simulation:
                     tool["type"] = tool_name
                     self.compute_tools.append(tool_class(owner=self, 
                                                          input_data=tool)) 
-    
+
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
         for physics_module_name, physics_module_data in \
                 self.input_data["PhysicsModules"].items():
+            print(f"Loading physics module: {physics_module_name}...")
             physics_module_class = PhysicsModule.lookup(physics_module_name)
             physics_module_data["name"] = physics_module_name
             self.physics_modules.append(physics_module_class(
@@ -403,6 +404,8 @@ class PhysicsModule(DynamicFactory):
         resource : `dict`
             resource dictionary to be shared
         """
+        for k in resource.keys():
+            print(f"Module {self.__class__.__name__} is sharing {k}")
         for physics_module in self._owner.physics_modules:
             physics_module.inspect_resource(resource)
         for diagnostic in self._owner.diagnostics:
@@ -592,7 +595,7 @@ class SimulationClock:
         self.this_step += 1
         self.time = self.start_time + self.dt * self.this_step
         if self.print_time:
-            print(f"t = {self.time}")
+            print(f"t = {self.time:0.4e}")
     
     def turn_back(self, num_steps=1):
         """Set the time back `num_steps` time steps"""
