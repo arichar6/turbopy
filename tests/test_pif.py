@@ -4,11 +4,11 @@ This integration test simply runs the particle_in_field app and compares the
 output files to "good" output.
 """
 import numpy as np
-import shutil
 
 
 def test_pif(pif_sim, tmp_path):
     pif_sim.input_data["Diagnostics"]["directory"] = f"{tmp_path}"
+    print(f"Temp path = {tmp_path}")
     pif_sim.run()
     for filename in ['e_0.5', 'grid', 'particle_p', 'particle_x', 'time']:
         ref_data = np.genfromtxt('tests/fixtures/particle_in_field/output/'

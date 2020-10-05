@@ -6,12 +6,54 @@ They are called every time step, or every N steps.
 They can write to file, cache for later, update plots, etc, and they
 can halt the simulation if conditions require.
 """
+from abc import ABC, abstractmethod
 import numpy as np
+import xarray as xr
 
 from .core import Diagnostic, Simulation
 
 
-class CSVOutputUtility:
+class OutputUtility(ABC):
+    """Abstract base class for output utility
+
+    An instance of an OutputUtility can (optionally) be used by diagnostic
+    classes to assist with the implementation details needed for outputing
+    the diagnostic information.
+    """
+    def __init__(self, input_data):
+        pass
+
+    @abstractmethod
+    def diagnose(self, data):
+        """Perform the diagnostic"""
+        pass
+
+    @abstractmethod
+    def finalize(self):
+        """Perform any finalization steps when the simulation is complete"""
+        pass
+
+    @abstractmethod
+    def write_data(self):
+        """Optional function for writting buffer to file etc."""
+        pass
+
+
+class PrintOutputUtility(OutputUtility):
+    """OutputUtility which writes to the screen"""
+    def diagnose(self, data):
+        """
+        Prints out data to standard output.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values.
+        """
+        print(data)
+
+
+class CSVOutputUtility(OutputUtility):
     """Comma separated value (CSV) diagnostic output helper class
 
     Provides routines for writing data to a file in CSV format. This
@@ -36,12 +78,41 @@ class CSVOutputUtility:
         Position in buffer.
     """
 
-    def __init__(self, filename, diagnostic_size):
-        self.filename = filename
-        self.buffer = np.zeros(diagnostic_size)
-        self.buffer_index = 0
+    def __init__(self, filename, diagnostic_size, **kwargs):
+        self._filename = filename
+        self._buffer = np.zeros(diagnostic_size)
+        self._buffer_index = 0
+
+    def diagnose(self, data):
+        """
+        Adds 'data' into csv output buffer.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values to be added to the buffer.
+        """
+        self._append(data)
+    
+    def finalize(self):
+        """Write the CSV data to file.
+        """
+        self._write_buffer()
+
+    def write_data(self):
+        """Write buffer to file"""
+        self._write_buffer()
 
     def append(self, data):
+        """Append data to the buffer.
+
+        .. deprecated::
+            `append` has been removed from the public API. Use `diagnose`
+            instead.
+        """
+        self._append(data)
+
+    def _append(self, data):
         """Append data to the buffer.
 
         Parameters
@@ -49,14 +120,21 @@ class CSVOutputUtility:
         data : :class:`numpy.ndarray`
             1D numpy array of values to be added to the buffer.
         """
-        self.buffer[self.buffer_index, :] = data
-        self.buffer_index += 1
+        self._buffer[self._buffer_index, :] = data
+        self._buffer_index += 1
 
-    def finalize(self):
+    def _write_buffer(self):
         """Write the CSV data to file.
         """
-        with open(self.filename, 'wb') as f:
-            np.savetxt(f, self.buffer, delimiter=",")
+        with open(self._filename, 'wb') as f:
+            np.savetxt(f, self._buffer, delimiter=",")
+
+
+
+utilities = {"stdout": PrintOutputUtility,
+             "csv": CSVOutputUtility,
+            }
+
 
 
 class PointDiagnostic(Diagnostic):
@@ -93,14 +171,13 @@ class PointDiagnostic(Diagnostic):
         self.output = input_data["output_type"]  # "stdout"
         self.get_value = None
         self.field = None
-        self.output_function = None
-        self.csv = None
+        self.outputter = None
 
     def diagnose(self):
         """
         Run output function given the value of the field.
         """
-        self.output_function(self.get_value(self.field))
+        self.outputter.diagnose(self.get_value(self.field))
 
     def inspect_resource(self, resource):
         """
@@ -114,17 +191,6 @@ class PointDiagnostic(Diagnostic):
         if self.field_name in resource:
             self.field = resource[self.field_name]
 
-    def print_diagnose(self, data):
-        """
-        Prints out data to standard output.
-
-        Parameters
-        ----------
-        data : :class:`numpy.ndarray`
-            1D numpy array of values.
-        """
-        print(data)
-
     def initialize(self):
         """
         Initialize output function if provided as csv, and self.csv
@@ -136,35 +202,18 @@ class PointDiagnostic(Diagnostic):
                                 self.location)
 
         # setup output method
-        functions = {"stdout": self.print_diagnose,
-                     "csv": self.csv_diagnose,
-                     }
-        self.output_function = functions[self._input_data["output_type"]]
+        diagnostic_size = (self._owner.clock.num_steps + 1, 1)
+        self._input_data["diagnostic_size"] = diagnostic_size
 
-        if self._input_data["output_type"] == "csv":
-            diagnostic_size = (self._owner.clock.num_steps + 1, 1)
-            # Use composition to provide csv i/o functionality
-            self.csv = CSVOutputUtility(self._input_data["filename"],
-                                        diagnostic_size)
-
-    def csv_diagnose(self, data):
-        """
-        Adds 'data' into csv output buffer.
-
-        Parameters
-        ----------
-        data : :class:`numpy.ndarray`
-            1D numpy array of values.
-        """
-        self.csv.append(data)
+        # Use composition to provide i/o functionality
+        self.outputter = utilities[self._input_data["output_type"]](**self._input_data)
 
     def finalize(self):
         """
         Write the CSV data to file if CSV is the proper output type.
         """
         self.diagnose()
-        if self._input_data["output_type"] == "csv":
-            self.csv.finalize()
+        self.outputter.finalize()
 
 
 class FieldDiagnostic(Diagnostic):
@@ -214,6 +263,8 @@ class FieldDiagnostic(Diagnostic):
 
         self.field_was_found = False
 
+        self.outputter = None
+
     def check_step(self):
         """
         Run diagnostic if dump_interval time has passed since last_dump
@@ -228,9 +279,9 @@ class FieldDiagnostic(Diagnostic):
         Run output_function depending on field.shape.
         """
         if len(self.field.shape) > 1:
-            self.output_function(self.field[:, self.component])
+            self.outputter.diagnose(self.field[:, self.component])
         else:
-            self.output_function(self.field)
+            self.outputter.diagnose(self.field)
 
     def inspect_resource(self, resource):
         """
@@ -245,17 +296,6 @@ class FieldDiagnostic(Diagnostic):
         if self.field_name in resource:
             self.field_was_found = True
             self.field = resource[self.field_name]
-
-    def print_diagnose(self, data):
-        """
-        Print field_name and data onto standard output.
-
-        Parameters
-        ----------
-        data : :class:`numpy.ndarray`
-            1D numpy array of values.
-        """
-        print(self.field_name, data)
 
     def initialize(self):
         """
@@ -277,33 +317,17 @@ class FieldDiagnostic(Diagnostic):
                 self._owner.clock.end_time / self.dump_interval) + 1),
                 self.field.shape[0])
 
-        # setup output method
-        functions = {"stdout": self.print_diagnose,
-                     "csv": self.csv_diagnose,
-                     }
-        self.output_function = functions[self._input_data["output_type"]]
-        if self._input_data["output_type"] == "csv":
-            self.csv = CSVOutputUtility(self._input_data["filename"],
-                                        self.diagnostic_size)
+        self._input_data['diagnostic_size'] = self.diagnostic_size
 
-    def csv_diagnose(self, data):
-        """
-        Adds 'data' into csv output buffer.
-
-        Parameters
-        ----------
-        data : :class:`numpy.ndarray`
-            1D numpy array of values.
-        """
-        self.csv.append(data)
+        # Use composition to provide i/o functionality
+        self.outputter = utilities[self._input_data["output_type"]](**self._input_data)
 
     def finalize(self):
         """
         Write the CSV data to file if CSV is the proper output type.
         """
         self.do_diagnostic()
-        if self._input_data["output_type"] == "csv":
-            self.csv.finalize()
+        self.outputter.finalize()
 
 
 class GridDiagnostic(Diagnostic):
@@ -376,7 +400,7 @@ class ClockDiagnostic(Diagnostic):
 
     def diagnose(self):
         """Append time into the csv buffer."""
-        self.csv.append(self._owner.clock.time)
+        self.csv.diagnose(self._owner.clock.time)
 
     def initialize(self):
         """Initialize `self.csv` as an instance of the
@@ -392,7 +416,182 @@ class ClockDiagnostic(Diagnostic):
         self.csv.finalize()
 
 
+
+class HistoryDiagnostic(Diagnostic):
+    """Outputs histories/traces as functions of time
+
+    This diagnostic assists in outputting 1D history traces. Multiple time-
+    dependant quantities can be selected, and are output to a NetCDF file
+    using the xarray python package.
+
+    Examples
+    --------
+    When using a python dictionary to define the turboPy simulation, the
+    history diagnostics can be added as in this example. Each item in the
+    "traces" list has several key: value pairs. The "name" key corresponds
+    to a turboPy resource that is shared by another module. The "coords"
+    key is used in cases where the shared resource is more than just a
+    scalar quantitiy. In this example, the position and momentum are
+    length-3 vectors, with the three entries corresponding to the three
+    vector components. In the case where a resources is a quantity on the
+    grid, then something like ``'coords': ['x'], 'units': 'm'`` might be
+    appropriate.
+
+    Note that the 'coords' list has two items, because the shape of the
+    shared numpy array is ``(1, 3)`` in this example. The first item is
+    basically just a placeholder, and is called "dim0".
+
+    >>> simulation_parameters = {"Diagnostics": {
+                "histories": {
+                    "filename": "output.nc",
+                    "traces": [
+                        {'name': 'EMField:E'},
+                        {'name': 'ChargedParticle:momentum',
+                        'units': 'kg m/s',
+                        'coords': ["dim0", "vector component"],
+                        'long_name': 'Particle Momentum'
+                        },
+                        {'name': 'ChargedParticle:position',
+                        'units': 'm',
+                        'coords': ["dim0", "vector component"],
+                        'long_name': 'Particle Position'
+                        },
+                    ]
+                }
+            }
+        }
+
+    This is another example of a similar history setup, but in the format
+    expected for a ``toml`` input file. ::
+
+        [Diagnostics.histories]
+        filename = "history.nc"
+
+        [[Diagnostics.histories.traces]]
+        name = 'ChargedParticle:momentum'
+        units = 'kg m/s'
+        coords = ["dim0", "vector component"]
+        long_name = 'Particle Momentum'
+
+        [[Diagnostics.histories.traces]]
+        name = 'ChargedParticle:position'
+        units = 'm'
+        coords = ["dim0", "vector component"]
+        long_name = 'Particle Position'
+
+        [[Diagnostics.histories.traces]]
+        name = 'EMField:E'
+
+
+    References
+    ----------
+    [1] C. Birdsall and A. Langdon. Plasma Physics via Computer Simulation.
+    Institute of Physics Series in Plasma Physics and Fluid Dynamics.
+    Taylor & Francis, 2004. Page 382.
+    """
+    def __init__(self, owner: Simulation, input_data: dict) -> None:
+        super().__init__(owner, input_data)
+        self._filename = input_data['filename']
+        self._data = {}
+        self._traces = xr.Dataset()
+        self._history_key_list = [t['name'] for t in input_data['traces']]
+
+    def diagnose(self):
+        this_step = self._owner.clock.this_step
+        self._traces['time'][this_step] = self._owner.clock.time
+
+        for name in self._history_key_list:
+            # Note, use the ellipsis here to handle multidimensional data
+            self._traces[name][this_step, ...] = self._data[name]
+
+    def initialize(self):
+        # set up the time coordinate
+        self._traces.coords['time'] = ('timestep', np.zeros(self._owner.clock.num_steps))
+        self._traces.coords['time'].attrs['units'] = 's'
+        self._traces.coords['time'].attrs['long_name'] = 'Time'
+
+        # set up the grid coordinate
+        # print(self._owner.grid.r)
+        self._traces.coords['r'] = ('grid', self._owner.grid.r)
+        # print(self._traces.coords['r'])
+        self._traces.coords['r'].attrs['units'] = 'm'
+        self._traces.coords['r'].attrs['long_name'] = 'Radius'
+
+        # set up the history traces
+        for trace in self._input_data['traces']:
+            trace_data = self._data[trace['name']]
+            # Convert data into DataArray
+            if not isinstance(trace_data, xr.DataArray):
+                trace_data = xr.DataArray(trace_data, dims=trace['coords'])
+
+            # use the xarray API to add this to the dataset
+            self._traces[trace['name']] = trace_data.expand_dims(
+                {'timestep': self._traces.coords['timestep']}).copy(deep=True)
+
+            # add attributes
+            if 'units' in trace:
+                self._traces[trace['name']].attrs['units'] = trace['units']
+            if 'long_name' in trace:
+                self._traces[trace['name']].attrs['long_name'] = trace['long_name']
+
+    def finalize(self):
+        self._traces = self._traces.squeeze()  # remove unused dimensions
+        self._traces.to_netcdf(self._filename, 'w')
+
+    def inspect_resource(self, resource: dict):
+        for item in self._history_key_list:
+            if item in resource:
+                self._data[item] = resource[item]
+
+
+
 Diagnostic.register("point", PointDiagnostic)
 Diagnostic.register("field", FieldDiagnostic)
 Diagnostic.register("grid", GridDiagnostic)
 Diagnostic.register("clock", ClockDiagnostic)
+Diagnostic.register("histories", HistoryDiagnostic)
+
+
+
+# TODO: add tests for plotting
+# class FieldPlottingDiagnostic(FieldDiagnostic):
+#     """Extend the FieldDiagnostic to also create plots of the data"""
+#     def __init__(self, owner: Simulation, input_data: dict):
+#         super().__init__(owner, input_data)
+# 
+#     def do_diagnostic(self):
+#         super().do_diagnostic()
+#         plt.clf()
+#         self.field.plot()
+#         plt.title(f"Time: {self._owner.clock.time:0.3e} s")
+#         plt.pause(0.01)
+# 
+#     def finalize(self):
+#         super().finalize()
+#         # Call show to keep the plot open
+#         plt.show()
+
+
+
+# sample = {"Diagnostics": {
+#         # default values come first
+#         "directory": "block_on_spring/output_leapfrog/",
+#         "output_type": "netcdf",
+#         "histories": {
+#             "filename": "test.nc",
+#             "traces": [
+#             {'name': 'ChargedParticle:momentum',
+#              'units': 'kg m/s',
+#              'coords': ["vector component"],
+#              'long_name': 'Particle Momentum'
+#             },
+#             {'name': 'ChargedParticle:position', 
+#              'units': 'm',
+#              'coords': ["vector component"],
+#              'long_name': 'Particle Position'
+#             },
+#             {'name': 'EMField:E'}
+#             ]
+#         }
+#     }
+# }

@@ -1,11 +1,13 @@
+from dataclasses import dataclass
 import numpy as np
+from numpy.lib.twodim_base import diag
 import xarray as xr
 # TODO: add tests for plotting
 # import matplotlib.pyplot as plt
 import pytest
 
 from turbopy import Simulation, PhysicsModule, Diagnostic
-from turbopy import CSVOutputUtility, ComputeTool #, FieldDiagnostic
+from turbopy import CSVOutputUtility, ComputeTool
 from turbopy import construct_simulation_from_toml
 
 
@@ -69,53 +71,28 @@ class ParticleDiagnostic(Diagnostic):
         self.data = None
         self.component = input_data["component"]
         self.output_function = None
-        
+        self.outputter = None
+
     def inspect_resource(self, resource):
         if "ChargedParticle:" + self.component in resource:
             self.data = resource["ChargedParticle:" + self.component]
     
     def diagnose(self):
-        self.output_function(self.data[0, :])
+        self.outputter.diagnose(self.data[0, :])
 
     def initialize(self):
         # setup output method
-        functions = {"stdout": self.print_diagnose,
-                     "csv": self.csv_diagnose,
-                     }
-        self.output_function = functions[self._input_data["output_type"]]
-        if self._input_data["output_type"] == "csv":
-            diagnostic_size = (self._owner.clock.num_steps + 1, 3)
-            self.csv = CSVOutputUtility(self._input_data["filename"], diagnostic_size)
+        diagnostic_size = (self._owner.clock.num_steps + 1, 3)
+        self.outputter = CSVOutputUtility(self._input_data["filename"],
+            diagnostic_size)
 
     def finalize(self):
         self.diagnose()
-        if self._input_data["output_type"] == "csv":
-            self.csv.finalize()
+        self.outputter.finalize()
 
     def print_diagnose(self, data):
         print(data)
 
-    def csv_diagnose(self, data):
-        self.csv.append(data)
-
-
-# TODO: add tests for plotting
-# class FieldPlottingDiagnostic(FieldDiagnostic):
-#     """Extend the FieldDiagnostic to also create plots of the data"""
-#     def __init__(self, owner: Simulation, input_data: dict):
-#         super().__init__(owner, input_data)
-# 
-#     def do_diagnostic(self):
-#         super().do_diagnostic()
-#         plt.clf()
-#         self.field.plot()
-#         plt.title(f"Time: {self._owner.clock.time:0.3e} s")
-#         plt.pause(0.01)
-# 
-#     def finalize(self):
-#         super().finalize()
-#         # Call show to keep the plot open
-#         plt.show()
 
 
 class ForwardEuler(ComputeTool):
@@ -141,4 +118,6 @@ def pif_sim():
     ComputeTool.register("ForwardEuler", ForwardEuler)
     input_file = "tests/fixtures/particle_in_field/particle_in_field.toml"
     sim = construct_simulation_from_toml(input_file)
+    
+    # print(sim.input_data['Diagnostics'])
     return sim
