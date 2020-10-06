@@ -434,7 +434,7 @@ class PhysicsModule(DynamicFactory):
         not start with an underscore) will be shared with the key
         `<class_name>_<attribute_name>`.
         """
-        shared = {f'{self.__class__}_{attribute}': value for attribute, value
+        shared = {f'{self.__class__.__name__}_{attribute}': value for attribute, value
                   in self.__dict__.items()
                   if not attribute.startswith('_')}
         self.publish_resource(shared)
