@@ -130,9 +130,78 @@ class CSVOutputUtility(OutputUtility):
             np.savetxt(f, self._buffer, delimiter=",")
 
 
+class NPYOutputUtility(OutputUtility):
+    """NumPy formatted binary file (.npy) diagnostic output helper class
+
+    Provides routines for writing data to a file in NumPy format. This
+    class can be used by Diagnostics subclassses to handle output to
+    .npy format.
+
+    Parameters
+    ----------
+    filename : str
+       File name for .npy data file.
+    diagnostic_size : (int, int)
+       Size of data set to be written to .npy file. First value is the
+       number of time points. Second value is number of spatial points.
+
+    Attributes
+    ----------
+    filename: str
+        File name for .npy data file.
+    buffer: :class:`numpy.ndarray`
+        Buffer for storing data before it is written to file.
+    buffer_index: int
+        Position in buffer.
+    """
+
+    def __init__(self, filename, diagnostic_size, **kwargs):
+        self._filename = filename
+        self._buffer = np.zeros(diagnostic_size)
+        self._buffer_index = 0
+
+    def diagnose(self, data):
+        """
+        Adds 'data' into npy output buffer.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values to be added to the buffer.
+        """
+        self._append(data)
+
+    def finalize(self):
+        """Write the npy data to file.
+        """
+        self._write_buffer()
+
+    def write_data(self):
+        """Write buffer to file"""
+        self._write_buffer()
+
+
+    def _append(self, data):
+        """Append data to the buffer.
+
+        Parameters
+        ----------
+        data : :class:`numpy.ndarray`
+            1D numpy array of values to be added to the buffer.
+        """
+        self._buffer[self._buffer_index, :] = data
+        self._buffer_index += 1
+    
+    def _write_buffer(self):
+        """Write the npy data to file.
+        """
+        with open(self._filename, 'wb') as f:
+            np.save(f, self._buffer)
+
 
 utilities = {"stdout": PrintOutputUtility,
              "csv": CSVOutputUtility,
+             "npy": NPYOutputUtility
             }
 
 
