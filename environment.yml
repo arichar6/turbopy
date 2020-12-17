@@ -2,7 +2,7 @@ name: turbopy
 channels:
         - defaults
 dependencies:
-        - python=3.7
+        - python>=3.7
         - numpy
         - scipy
         - xarray
