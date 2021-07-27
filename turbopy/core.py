@@ -3,14 +3,15 @@ Core base classes of the turboPy framework
 
 Notes
 -----
-The published paper for Turbopy: A lightweight python framework for computational physics \
- can be found in the link below [1]_.
+The published paper for Turbopy: A lightweight python framework for \
+ computational physics can be found in the link below [1]_.
+
 
 References
 ----------
-.. [1] 1 A.S. Richardson, D.F. Gordon, S.B. Swanekamp, I.M. Rittersdorf, P.E. Adamson, \
-O.S. Grannis, G.T. Morgan, A. Ostenfeld, K.L. Phlips, C.G. Sun, G. Tang, and D.J. Watkins, \
-Comput. Phys. Commun. 258, 107607 (2021). \
+.. [1] 1 A.S. Richardson, D.F. Gordon, S.B. Swanekamp, I.M. Rittersdorf, \
+P.E. Adamson, O.S. Grannis, G.T. Morgan, A. Ostenfeld, K.L. Phlips, C.G. Sun, \
+G. Tang, and D.J. Watkins, Comput. Phys. Commun. 258, 107607 (2021). \
 https://doi.org/10.1016/j.cpc.2020.107607
 
 """
@@ -95,10 +96,10 @@ class Simulation:
             :class:`Diagnostic` constructors.
 
             If the directory and filename keys are not specified,
-            default values are created in the 
+            default values are created in the
             :meth:`read_diagnostics_from_input` method.
-            The default name for the directory is "default_output" and 
-            the default filename is the name of the Diagnostic subclass 
+            The default name for the directory is "default_output" and
+            the default filename is the name of the Diagnostic subclass
             followed by a number.
 
         ``"Tools"`` : `dict` [`str`, `dict`], optional
@@ -132,6 +133,10 @@ class Simulation:
         self.units = None
 
         self.input_data = input_data
+
+        # set default values for optional
+        self.input_data.setdefault('Tools', {})
+        self.input_data.setdefault('Diagnostics', {})
 
     def run(self):
         """
@@ -224,15 +229,14 @@ class Simulation:
 
     def read_tools_from_input(self):
         """Construct :class:`ComputeTools` based on input"""
-        if "Tools" in self.input_data:
-            for tool_name, params in self.input_data["Tools"].items():
-                tool_class = ComputeTool.lookup(tool_name)
-                if not isinstance(params, list):
-                    params = [params]
-                for tool in params:
-                    tool["type"] = tool_name
-                    self.compute_tools.append(tool_class(owner=self, 
-                                                         input_data=tool)) 
+        for tool_name, params in self.input_data["Tools"].items():
+            tool_class = ComputeTool.lookup(tool_name)
+            if not isinstance(params, list):
+                params = [params]
+            for tool in params:
+                tool["type"] = tool_name
+                self.compute_tools.append(tool_class(owner=self,
+                                                     input_data=tool))
 
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
@@ -247,40 +251,46 @@ class Simulation:
 
     def read_diagnostics_from_input(self):
         """Construct :class:`Diagnostic` instances based on input"""
-        if "Diagnostics" in self.input_data:
-            # This dictionary has two types of keys:
-            #    keys that are valid diagnostic types
-            #    other keys, which should be passed along
-            #    as "default" parameters
-            diags = {k: v for k, v in
-                     self.input_data["Diagnostics"].items()
-                     if Diagnostic.is_valid_name(k)}
-            params = {k: v for k, v in
-                      self.input_data["Diagnostics"].items()
-                      if not Diagnostic.is_valid_name(k)}
+        diagnostics, default_params = self.parse_diagnostic_input_dictionary()
 
-            if "directory" not in params:
-                params["directory"] = str(Path("default_output"))
+        diagnostics = make_values_into_lists(diagnostics)
+        default_params.setdefault('directory', 'default_output')
 
-            for diag_type, d in diags.items():
-                diagnostic_class = Diagnostic.lookup(diag_type)
-                if type(d) is not list:
-                    d = [d]
-                file_num = 0
-                for di in d:
-                    # Values in di supersede values in params because
-                    # of the order in which these are combined
-                    di = {**params, **di, "type": diag_type}
-                    if "filename" not in di:
-                        # Set a default output filename
-                        file_end = di.get("output_type", "out")
-                        di["filename"] = (f"{diag_type}{file_num}"
+        for diag_type, list_of_diagnostics in diagnostics.items():
+            diagnostic_class = Diagnostic.lookup(diag_type)
+
+            file_num = 0
+            for params in list_of_diagnostics:
+                params['type'] = diag_type
+                params = self.combine_dictionaries(default_params, params)
+                if "filename" not in params:
+                    # Set a default output filename
+                    file_end = params.get("output_type", "out")
+                    params["filename"] = (f"{diag_type}{file_num}"
                                           f".{file_end}")
-                        file_num += 1
-                    di["filename"] = str(Path(di["directory"])
-                                         / Path(di["filename"]))
-                    self.diagnostics.append(
-                        diagnostic_class(owner=self, input_data=di))
+                    file_num += 1
+                params["filename"] = str(Path(params["directory"])
+                                         / Path(params["filename"]))
+                self.diagnostics.append(
+                    diagnostic_class(owner=self, input_data=params))
+
+    def combine_dictionaries(self, defaults, custom):
+        # Values in "custom" dictionary supersede "defaults" because of
+        # the order in which they are combined here
+        return {**defaults, **custom}
+
+    def parse_diagnostic_input_dictionary(self):
+        # The input_data["Diagnostics"] dictionary has two types of keys:
+        #    1) keys that are valid diagnostic types
+        #    2) other keys, which should be passed along
+        #    as "default" parameters
+        diagnostics = {k: v for k, v in
+                       self.input_data["Diagnostics"].items()
+                       if Diagnostic.is_valid_name(k)}
+        default_params = {k: v for k, v in
+                          self.input_data["Diagnostics"].items()
+                          if not Diagnostic.is_valid_name(k)}
+        return diagnostics, default_params
 
     def sort_modules(self):
         """Sort :class:`Simulation.physics_modules` by some logic
@@ -291,7 +301,7 @@ class Simulation:
     def find_tool_by_name(self, tool_name: str, custom_name: str = None):
         """Returns the :class:`ComputeTool` associated with the
         given name"""
-        tools = [t for t in self.compute_tools if t.name == tool_name 
+        tools = [t for t in self.compute_tools if t.name == tool_name
                  and t.custom_name == custom_name]
         if len(tools) == 1:
             return tools[0]
@@ -440,8 +450,8 @@ class PhysicsModule(DynamicFactory):
         not start with an underscore) will be shared with the key
         `<class_name>_<attribute_name>`.
         """
-        shared = {f'{self.__class__.__name__}_{attribute}': value for attribute, value
-                  in self.__dict__.items()
+        shared = {f'{self.__class__.__name__}_{attribute}': value
+                  for attribute, value in self.__dict__.items()
                   if not attribute.startswith('_')}
         self.publish_resource(shared)
 
@@ -501,7 +511,7 @@ class ComputeTool(DynamicFactory):
         Type of ComputeTool.
     custom_name: `str`
         Name given to individual instance of tool, optional.
-        Used when multiple tools of the same type exist in one 
+        Used when multiple tools of the same type exist in one
         :class:`Simulation`.
     """
 
@@ -555,7 +565,7 @@ class SimulationClock:
     _input_data : `dict`
         Dictionary of parameters needed to define the simulation
         clock.
-    
+
     start_time : `float`
         Clock start time.
     time : `float`
@@ -602,13 +612,13 @@ class SimulationClock:
         self.time = self.start_time + self.dt * self.this_step
         if self.print_time:
             print(f"t = {self.time:0.4e}")
-    
+
     def turn_back(self, num_steps=1):
         """Set the time back `num_steps` time steps"""
         self.this_step = self.this_step - num_steps
         self.time = self.start_time + self.dt * self.this_step
         if self.print_time:
-            print(f"t = {self.time}")        
+            print(f"t = {self.time}")
 
     def is_running(self):
         """Check if time is less than end time"""
@@ -880,8 +890,8 @@ class Grid:
         self.interface_volumes[-1] = self.cell_volumes[-1]
 
         self.inverse_interface_volumes[0] = self.inverse_cell_volumes[0]
-        self.inverse_interface_volumes[1:-1] = 0.5 * (self.inverse_cell_volumes[1:]
-                                                      + self.inverse_cell_volumes[0:-1])
+        self.inverse_interface_volumes[1:-1] = 0.5 * \
+            (self.inverse_cell_volumes[1:] + self.inverse_cell_volumes[0:-1])
         self.inverse_interface_volumes[-1] = self.inverse_cell_volumes[-1]
 
     def __repr__(self):
@@ -968,3 +978,14 @@ class Diagnostic(DynamicFactory):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._input_data})"
+
+
+def wrap_item_in_list(item):
+    if type(item) is list:
+        return item
+    else:
+        return [item]
+
+
+def make_values_into_lists(dictionary):
+    return {k: wrap_item_in_list(v) for k, v in dictionary.items()}
