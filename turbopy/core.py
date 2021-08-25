@@ -134,6 +134,8 @@ class Simulation:
 
         self.input_data = input_data
 
+        self.all_shared_resources = {}
+
         # set default values for optional
         self.input_data.setdefault('Tools', {})
         self.input_data.setdefault('Diagnostics', {})
@@ -203,9 +205,13 @@ class Simulation:
         for m in self.physics_modules:
             m.exchange_resources()
         for m in self.physics_modules:
+            m.inspect_resources()
+        for m in self.physics_modules:
             m.initialize()
 
         print("Initializing Diagnostics...")
+        for d in self.diagnostics:
+            d.inspect_resources()
         for d in self.diagnostics:
             d.initialize()
 
@@ -310,6 +316,12 @@ class Simulation:
     def __repr__(self):
         return f"{self.__class__.__name__}({self.input_data})"
 
+    def gather_shared_resources(self, shared):
+        for k, v in shared.items():
+            if k in self.all_shared_resources:
+                warnings.warn(f'Shared resource {k} has been overwritten')
+            self.all_shared_resources[k] = v
+
 
 class DynamicFactory(ABC):
     """Abstract class which provides dynamic factory functionality
@@ -317,6 +329,7 @@ class DynamicFactory(ABC):
     This base class provides a dynamic factory pattern functionality to
     classes that derive from this.
     """
+
     @property
     @abstractmethod
     def _factory_type_name(self):
@@ -392,6 +405,17 @@ class PhysicsModule(DynamicFactory):
         Registered derived ComputeTool classes.
     _factory_type_name : `str`
         Type of PhysicsModule child class.
+    _needed_resources: `dict`
+        Dictionary that lists shared resources that this module
+        needs. Format is `{shared_key: variable_name}`, where
+        `shared_key` is a string with the name of needed resource,
+        and `variable_name` is a string to use when saving this
+        variable. For example: {"Fields:E": "E"} will make `self.E`.
+    _resources_to_share: `dict`
+        Dictionary that lists shared resources that this module
+        is sharing to others. Format is `{shared_key: variable}`, where
+        `shared_key` is a string with the name of resource to share,
+        and `variable` is the data to be shared.
 
     Notes
     -----
@@ -411,15 +435,34 @@ class PhysicsModule(DynamicFactory):
         self._module_type = None
         self._input_data = input_data
 
-    def publish_resource(self, resource: dict):
-        """
-        Method which implements the details of sharing resources
+        # By default, share "public" attributes
+        shared = {f'{self.__class__.__name__}_{attribute}': value
+                  for attribute, value
+                  in self.__dict__.items()
+                  if not attribute.startswith('_')}
+        self._resources_to_share = shared
 
+        # Items should have key "shared_name", and value is the variable
+        # name for the "pointer".
+        # For example: {"Fields:E": "E"} will make self.E
+        self._needed_resources = {}
+
+    def publish_resource(self, resource: dict):
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_resources_to_share`` dictionary.*
+
+        Method which implements the details of sharing resources
         Parameters
         ----------
         resource : `dict`
             resource dictionary to be shared
         """
+        warnings.warn("The resource-sharing API has changed. "
+                      "Add to `self._resources_to_share` instead of "
+                      "calling `publish_resource`.",
+                      DeprecationWarning)
         for k in resource.keys():
             print(f"Module {self.__class__.__name__} is sharing {k}")
         for physics_module in self._owner.physics_modules:
@@ -428,16 +471,30 @@ class PhysicsModule(DynamicFactory):
             diagnostic.inspect_resource(resource)
 
     def inspect_resource(self, resource: dict):
-        """Method for accepting resources shared by other PhysicsModules
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_needed_resources`` dictionary.*
+
+        Method for accepting resources shared by other PhysicsModules
         If your subclass needs the data described by the key, now's
         their chance to save a pointer to the data.
-
         Parameters
         ----------
         resource : `dict`
             resource dictionary to be shared
         """
         pass
+
+    def inspect_resources(self):
+        for shared_name, var_name in self._needed_resources.items():
+            if shared_name not in self._owner.all_shared_resources:
+                warnings.warn(f"Module {self.__class__.__name__} can't find"
+                              f"needed resource {shared_name}")
+            else:
+                self.__dict__[var_name] = self._owner.all_shared_resources[
+                                              shared_name
+                                          ]
 
     def exchange_resources(self):
         """Main method for sharing resources with other
@@ -450,10 +507,11 @@ class PhysicsModule(DynamicFactory):
         not start with an underscore) will be shared with the key
         `<class_name>_<attribute_name>`.
         """
-        shared = {f'{self.__class__.__name__}_{attribute}': value
-                  for attribute, value in self.__dict__.items()
-                  if not attribute.startswith('_')}
-        self.publish_resource(shared)
+
+        for k in self._resources_to_share.keys():
+            print(f"Module {self.__class__.__name__} is sharing {k}")
+
+        self._owner.gather_shared_resources(self._resources_to_share)
 
     def update(self):
         """Do the main work of the :class:`PhysicsModule`
@@ -596,8 +654,8 @@ class SimulationClock:
         if "num_steps" in input_data:
             self.num_steps = input_data["num_steps"]
             self.dt = (
-                (input_data["end_time"] - input_data["start_time"])
-                / input_data["num_steps"])
+                    (input_data["end_time"] - input_data["start_time"])
+                    / input_data["num_steps"])
         elif "dt" in input_data:
             self.dt = input_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
@@ -670,6 +728,7 @@ class Grid:
         Inverse of coordinate values at each Grid point,
         1/:class:`Grid.r`.
     """
+
     def __init__(self, input_data: dict):
         self._input_data = input_data
         self.r_min = None
@@ -859,17 +918,17 @@ class Grid:
 
     def set_cartesian_volumes(self):
         self.cell_volumes = self.cell_edges[1:] - self.cell_edges[:-1]
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_cylindrical_volumes(self):
         scratch = self.cell_edges ** 2
         self.cell_volumes = np.pi * (scratch[1:] - scratch[:-1])
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_spherical_volumes(self):
         scratch = self.cell_edges ** 3
-        self.cell_volumes = 4/3 * np.pi * (scratch[1:] - scratch[:-1])
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.cell_volumes = 4 / 3 * np.pi * (scratch[1:] - scratch[:-1])
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_cartesian_areas(self):
         self.interface_areas = np.ones_like(self.cell_edges)
@@ -920,6 +979,12 @@ class Diagnostic(DynamicFactory):
     _input_data: `dict`
         Dictionary that contains user defined parameters about this
         object such as its name.
+    _needed_resources: `dict`
+        Dictionary that lists shared resources that this module
+        needs. Format is `{shared_key: variable_name}`, where
+        `shared_key` is a string with the name of needed resource,
+        and `variable_name` is a string to use when saving this
+        variable. For example: {"Fields:E": "E"} will make `self.E`.
     """
 
     _factory_type_name = "Diagnostic"
@@ -929,12 +994,20 @@ class Diagnostic(DynamicFactory):
         self._owner = owner
         self._input_data = input_data
 
-    def inspect_resource(self, resource: dict):
-        """Save references to data from other PhysicsModules
+        # Items should have key "shared_name", and value is the variable
+        # name for the "pointer"
+        # For example: {"Fields:E": "E"} will make self.E
+        self._needed_resources = {}
 
+    def inspect_resource(self, resource: dict):
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_needed_resources`` dictionary.*
+
+        Save references to data from other PhysicsModules
         If your subclass needs the data described by the key, now's
         their chance to save a reference to the data
-
         Parameters
         ----------
         resource: `dict`
@@ -942,6 +1015,16 @@ class Diagnostic(DynamicFactory):
             PhysicsModules.
         """
         pass
+
+    def inspect_resources(self):
+        for shared_name, var_name in self._needed_resources.items():
+            if shared_name not in self._owner.all_shared_resources:
+                warnings.warn(f"Diagnostic {self.__class__.__name__} can't "
+                              f"find needed resource {shared_name}")
+            else:
+                self.__dict__[var_name] = self._owner.all_shared_resources[
+                                              shared_name
+                                          ]
 
     def diagnose(self):
         """Perform diagnostic step

@@ -98,6 +98,7 @@ def test_read_grid_from_input_should_set_grid_attr_when_called(simple_sim):
     assert simple_sim.grid.r_max == 1
 
 
+# Test the old sharing API
 class ReceivingModule(PhysicsModule):
     """Example PhysicsModule subclass for tests"""
     def __init__(self, owner: Simulation, input_data: dict):
@@ -133,7 +134,6 @@ PhysicsModule.register("Receiving", ReceivingModule)
 PhysicsModule.register("Sharing", SharingModule)
 
 
-# Simulation class test methods
 @pytest.fixture(name='share_sim')
 def shared_simulation_fixture():
     """Pytest fixture for basic simulation class"""
@@ -153,11 +153,74 @@ def test_that_simulation_is_created(share_sim):
     assert share_sim.physics_modules == []
 
 
+def test_that_v1_sharing_is_deprecated(share_sim):
+    with pytest.deprecated_call():
+        share_sim.prepare_simulation()
+
+
 def test_that_shared_resource_is_available_in_initialize(share_sim):
     share_sim.prepare_simulation()
     assert len(share_sim.physics_modules) == 2
     assert len(share_sim.physics_modules[0].data) == 1
-    assert id(share_sim.physics_modules[0].data) == id(share_sim.physics_modules[1].data)
+    assert (id(share_sim.physics_modules[0].data)
+            == id(share_sim.physics_modules[1].data))
+
+
+# Test the new sharing API
+class ReceivingModuleV2(PhysicsModule):
+    """Example PhysicsModule subclass for tests"""
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.data = None
+        self._needed_resources = {'shared': 'data'}
+
+    def initialize(self):
+        # if resources are shared correctly, then this list will be accessible
+        print(f'The first data item is {self.data[0]}')
+
+    def update(self):
+        pass
+
+
+class SharingModuleV2(PhysicsModule):
+    """Example PhysicsModule subclass for tests"""
+    def __init__(self, owner: Simulation, input_data: dict):
+        super().__init__(owner, input_data)
+        self.data = ['test']
+        self._resources_to_share = {'shared': self.data}
+
+    def update(self):
+        pass
+
+
+PhysicsModule.register("ReceivingV2", ReceivingModuleV2)
+PhysicsModule.register("SharingV2", SharingModuleV2)
+
+
+# Still need to add tests for the Diagnostics with the new API
+
+
+@pytest.fixture(name='share_sim_V2')
+def shared_simulation_V2_fixture():
+    """Pytest fixture for basic simulation class"""
+    dic = {"Grid": {"N": 2, "r_min": 0, "r_max": 1},
+           "Clock": {"start_time": 0,
+                     "end_time": 10,
+                     "num_steps": 1},
+           "PhysicsModules": {
+               "ReceivingV2": {},
+               "SharingV2": {}
+           },
+           }
+    return Simulation(dic)
+
+
+def test_that_V2_shared_resource_is_available_in_initialize(share_sim_V2):
+    share_sim_V2.prepare_simulation()
+    assert len(share_sim_V2.physics_modules) == 2
+    assert len(share_sim_V2.physics_modules[0].data) == 1
+    assert (id(share_sim_V2.physics_modules[0].data)
+            == id(share_sim_V2.physics_modules[1].data))
 
 
 def test_gridless_simulation(tmp_path):
@@ -186,6 +249,13 @@ def test_gridless_simulation(tmp_path):
         assert sim.grid is None
         assert len(w) == 1
         assert str(w[-1].message) == "No Grid Found."
+
+
+def test_subclass(simple_sim):
+    """Test if subclasses are contained in Simulation"""
+    assert issubclass(ExampleModule, PhysicsModule)
+    assert issubclass(ExampleDiagnostic, Diagnostic)
+    assert issubclass(ExampleTool, ComputeTool)
 
 
 def test_read_clock_from_input_should_set_clock_attr_when_called(simple_sim):
@@ -247,7 +317,7 @@ def test_turn_back_should_turn_back_time_when_called(simple_sim):
 
 
 def test_read_modules_from_input_should_set_modules_attr_when_called(simple_sim):
-    """Test read_modules_from_input method in Simulation calss"""
+    """Test read_modules_from_input method in Simulation class"""
     simple_sim.read_modules_from_input()
     assert simple_sim.physics_modules[0]._owner == simple_sim
     assert simple_sim.physics_modules[0]._input_data == {"name": "ExampleModule"}
