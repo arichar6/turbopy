@@ -15,12 +15,11 @@ class BlockOnSpring(PhysicsModule):
         self.spring_constant = input_data.get('spring_constant', 1)
         self.push = owner.find_tool_by_name(input_data["pusher"]).push
 
+        self._resources_to_share = {"Block:position": self.position,
+                                    "Block:momentum": self.momentum}
+
     def initialize(self):
         self.position[:] = np.array(self._input_data["x0"])
-
-    def exchange_resources(self):
-        self.publish_resource({"Block:position": self.position})
-        self.publish_resource({"Block:momentum": self.momentum})
 
     def update(self):
         self.push(self.position, self.momentum,
@@ -34,9 +33,7 @@ class BlockDiagnostic(Diagnostic):
         self.component = input_data.get("component", 1)
         self.outputter = None
 
-    def inspect_resource(self, resource):
-        if "Block:" + self.component in resource:
-            self.data = resource["Block:" + self.component]
+        self._needed_resources = {"Block:" + self.component: "data"}
 
     def diagnose(self):
         self.outputter.diagnose(self.data[0, :])
@@ -44,7 +41,7 @@ class BlockDiagnostic(Diagnostic):
     def initialize(self):
         diagnostic_size = (self._owner.clock.num_steps + 1, 3)
         self.outputter = CSVOutputUtility(self._input_data["filename"],
-            diagnostic_size)
+                                          diagnostic_size)
 
     def finalize(self):
         self.diagnose()
@@ -137,7 +134,7 @@ def bos_run():
         "Tools": {
             "Leapfrog": {},
             "BlockForwardEuler": {},
-            "BackwardEuler":{}
+            "BackwardEuler": {}
         },
         "Diagnostics": {
             # default values come first

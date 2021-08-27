@@ -3,14 +3,15 @@ Core base classes of the turboPy framework
 
 Notes
 -----
-The published paper for Turbopy: A lightweight python framework for computational physics \
- can be found in the link below [1]_.
+The published paper for Turbopy: A lightweight python framework for \
+ computational physics can be found in the link below [1]_.
+
 
 References
 ----------
-.. [1] 1 A.S. Richardson, D.F. Gordon, S.B. Swanekamp, I.M. Rittersdorf, P.E. Adamson, \
-O.S. Grannis, G.T. Morgan, A. Ostenfeld, K.L. Phlips, C.G. Sun, G. Tang, and D.J. Watkins, \
-Comput. Phys. Commun. 258, 107607 (2021). \
+.. [1] 1 A.S. Richardson, D.F. Gordon, S.B. Swanekamp, I.M. Rittersdorf, \
+P.E. Adamson, O.S. Grannis, G.T. Morgan, A. Ostenfeld, K.L. Phlips, C.G. Sun, \
+G. Tang, and D.J. Watkins, Comput. Phys. Commun. 258, 107607 (2021). \
 https://doi.org/10.1016/j.cpc.2020.107607
 
 """
@@ -95,10 +96,10 @@ class Simulation:
             :class:`Diagnostic` constructors.
 
             If the directory and filename keys are not specified,
-            default values are created in the 
+            default values are created in the
             :meth:`read_diagnostics_from_input` method.
-            The default name for the directory is "default_output" and 
-            the default filename is the name of the Diagnostic subclass 
+            The default name for the directory is "default_output" and
+            the default filename is the name of the Diagnostic subclass
             followed by a number.
 
         ``"Tools"`` : `dict` [`str`, `dict`], optional
@@ -132,6 +133,12 @@ class Simulation:
         self.units = None
 
         self.input_data = input_data
+
+        self.all_shared_resources = {}
+
+        # set default values for optional
+        self.input_data.setdefault('Tools', {})
+        self.input_data.setdefault('Diagnostics', {})
 
     def run(self):
         """
@@ -198,9 +205,13 @@ class Simulation:
         for m in self.physics_modules:
             m.exchange_resources()
         for m in self.physics_modules:
+            m.inspect_resources()
+        for m in self.physics_modules:
             m.initialize()
 
         print("Initializing Diagnostics...")
+        for d in self.diagnostics:
+            d.inspect_resources()
         for d in self.diagnostics:
             d.initialize()
 
@@ -224,15 +235,14 @@ class Simulation:
 
     def read_tools_from_input(self):
         """Construct :class:`ComputeTools` based on input"""
-        if "Tools" in self.input_data:
-            for tool_name, params in self.input_data["Tools"].items():
-                tool_class = ComputeTool.lookup(tool_name)
-                if not isinstance(params, list):
-                    params = [params]
-                for tool in params:
-                    tool["type"] = tool_name
-                    self.compute_tools.append(tool_class(owner=self, 
-                                                         input_data=tool)) 
+        for tool_name, params in self.input_data["Tools"].items():
+            tool_class = ComputeTool.lookup(tool_name)
+            if not isinstance(params, list):
+                params = [params]
+            for tool in params:
+                tool["type"] = tool_name
+                self.compute_tools.append(tool_class(owner=self,
+                                                     input_data=tool))
 
     def read_modules_from_input(self):
         """Construct :class:`PhysicsModule` instances based on input"""
@@ -247,40 +257,46 @@ class Simulation:
 
     def read_diagnostics_from_input(self):
         """Construct :class:`Diagnostic` instances based on input"""
-        if "Diagnostics" in self.input_data:
-            # This dictionary has two types of keys:
-            #    keys that are valid diagnostic types
-            #    other keys, which should be passed along
-            #    as "default" parameters
-            diags = {k: v for k, v in
-                     self.input_data["Diagnostics"].items()
-                     if Diagnostic.is_valid_name(k)}
-            params = {k: v for k, v in
-                      self.input_data["Diagnostics"].items()
-                      if not Diagnostic.is_valid_name(k)}
+        diagnostics, default_params = self.parse_diagnostic_input_dictionary()
 
-            if "directory" not in params:
-                params["directory"] = str(Path("default_output"))
+        diagnostics = make_values_into_lists(diagnostics)
+        default_params.setdefault('directory', 'default_output')
 
-            for diag_type, d in diags.items():
-                diagnostic_class = Diagnostic.lookup(diag_type)
-                if not type(d) is list:
-                    d = [d]
-                file_num = 0
-                for di in d:
-                    # Values in di supersede values in params because
-                    # of the order in which these are combined
-                    di = {**params, **di, "type": diag_type}
-                    if "filename" not in di:
-                        # Set a default output filename
-                        file_end = di.get("output_type", "out")
-                        di["filename"] = (f"{diag_type}{file_num}"
+        for diag_type, list_of_diagnostics in diagnostics.items():
+            diagnostic_class = Diagnostic.lookup(diag_type)
+
+            file_num = 0
+            for params in list_of_diagnostics:
+                params['type'] = diag_type
+                params = self.combine_dictionaries(default_params, params)
+                if "filename" not in params:
+                    # Set a default output filename
+                    file_end = params.get("output_type", "out")
+                    params["filename"] = (f"{diag_type}{file_num}"
                                           f".{file_end}")
-                        file_num += 1
-                    di["filename"] = str(Path(di["directory"])
-                                         / Path(di["filename"]))
-                    self.diagnostics.append(
-                        diagnostic_class(owner=self, input_data=di))
+                    file_num += 1
+                params["filename"] = str(Path(params["directory"])
+                                         / Path(params["filename"]))
+                self.diagnostics.append(
+                    diagnostic_class(owner=self, input_data=params))
+
+    def combine_dictionaries(self, defaults, custom):
+        # Values in "custom" dictionary supersede "defaults" because of
+        # the order in which they are combined here
+        return {**defaults, **custom}
+
+    def parse_diagnostic_input_dictionary(self):
+        # The input_data["Diagnostics"] dictionary has two types of keys:
+        #    1) keys that are valid diagnostic types
+        #    2) other keys, which should be passed along
+        #    as "default" parameters
+        diagnostics = {k: v for k, v in
+                       self.input_data["Diagnostics"].items()
+                       if Diagnostic.is_valid_name(k)}
+        default_params = {k: v for k, v in
+                          self.input_data["Diagnostics"].items()
+                          if not Diagnostic.is_valid_name(k)}
+        return diagnostics, default_params
 
     def sort_modules(self):
         """Sort :class:`Simulation.physics_modules` by some logic
@@ -291,7 +307,7 @@ class Simulation:
     def find_tool_by_name(self, tool_name: str, custom_name: str = None):
         """Returns the :class:`ComputeTool` associated with the
         given name"""
-        tools = [t for t in self.compute_tools if t.name == tool_name 
+        tools = [t for t in self.compute_tools if t.name == tool_name
                  and t.custom_name == custom_name]
         if len(tools) == 1:
             return tools[0]
@@ -300,6 +316,12 @@ class Simulation:
     def __repr__(self):
         return f"{self.__class__.__name__}({self.input_data})"
 
+    def gather_shared_resources(self, shared):
+        for k, v in shared.items():
+            if k in self.all_shared_resources:
+                warnings.warn(f'Shared resource {k} has been overwritten')
+            self.all_shared_resources[k] = v
+
 
 class DynamicFactory(ABC):
     """Abstract class which provides dynamic factory functionality
@@ -307,6 +329,7 @@ class DynamicFactory(ABC):
     This base class provides a dynamic factory pattern functionality to
     classes that derive from this.
     """
+
     @property
     @abstractmethod
     def _factory_type_name(self):
@@ -382,6 +405,17 @@ class PhysicsModule(DynamicFactory):
         Registered derived ComputeTool classes.
     _factory_type_name : `str`
         Type of PhysicsModule child class.
+    _needed_resources: `dict`
+        Dictionary that lists shared resources that this module
+        needs. Format is `{shared_key: variable_name}`, where
+        `shared_key` is a string with the name of needed resource,
+        and `variable_name` is a string to use when saving this
+        variable. For example: {"Fields:E": "E"} will make `self.E`.
+    _resources_to_share: `dict`
+        Dictionary that lists shared resources that this module
+        is sharing to others. Format is `{shared_key: variable}`, where
+        `shared_key` is a string with the name of resource to share,
+        and `variable` is the data to be shared.
 
     Notes
     -----
@@ -401,15 +435,34 @@ class PhysicsModule(DynamicFactory):
         self._module_type = None
         self._input_data = input_data
 
-    def publish_resource(self, resource: dict):
-        """
-        Method which implements the details of sharing resources
+        # By default, share "public" attributes
+        shared = {f'{self.__class__.__name__}_{attribute}': value
+                  for attribute, value
+                  in self.__dict__.items()
+                  if not attribute.startswith('_')}
+        self._resources_to_share = shared
 
+        # Items should have key "shared_name", and value is the variable
+        # name for the "pointer".
+        # For example: {"Fields:E": "E"} will make self.E
+        self._needed_resources = {}
+
+    def publish_resource(self, resource: dict):
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_resources_to_share`` dictionary.*
+
+        Method which implements the details of sharing resources
         Parameters
         ----------
         resource : `dict`
             resource dictionary to be shared
         """
+        warnings.warn("The resource-sharing API has changed. "
+                      "Add to `self._resources_to_share` instead of "
+                      "calling `publish_resource`.",
+                      DeprecationWarning)
         for k in resource.keys():
             print(f"Module {self.__class__.__name__} is sharing {k}")
         for physics_module in self._owner.physics_modules:
@@ -418,16 +471,30 @@ class PhysicsModule(DynamicFactory):
             diagnostic.inspect_resource(resource)
 
     def inspect_resource(self, resource: dict):
-        """Method for accepting resources shared by other PhysicsModules
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_needed_resources`` dictionary.*
+
+        Method for accepting resources shared by other PhysicsModules
         If your subclass needs the data described by the key, now's
         their chance to save a pointer to the data.
-
         Parameters
         ----------
         resource : `dict`
             resource dictionary to be shared
         """
         pass
+
+    def inspect_resources(self):
+        for shared_name, var_name in self._needed_resources.items():
+            if shared_name not in self._owner.all_shared_resources:
+                warnings.warn(f"Module {self.__class__.__name__} can't find"
+                              f"needed resource {shared_name}")
+            else:
+                self.__dict__[var_name] = self._owner.all_shared_resources[
+                                              shared_name
+                                          ]
 
     def exchange_resources(self):
         """Main method for sharing resources with other
@@ -440,10 +507,11 @@ class PhysicsModule(DynamicFactory):
         not start with an underscore) will be shared with the key
         `<class_name>_<attribute_name>`.
         """
-        shared = {f'{self.__class__.__name__}_{attribute}': value for attribute, value
-                  in self.__dict__.items()
-                  if not attribute.startswith('_')}
-        self.publish_resource(shared)
+
+        for k in self._resources_to_share.keys():
+            print(f"Module {self.__class__.__name__} is sharing {k}")
+
+        self._owner.gather_shared_resources(self._resources_to_share)
 
     def update(self):
         """Do the main work of the :class:`PhysicsModule`
@@ -501,7 +569,7 @@ class ComputeTool(DynamicFactory):
         Type of ComputeTool.
     custom_name: `str`
         Name given to individual instance of tool, optional.
-        Used when multiple tools of the same type exist in one 
+        Used when multiple tools of the same type exist in one
         :class:`Simulation`.
     """
 
@@ -555,7 +623,7 @@ class SimulationClock:
     _input_data : `dict`
         Dictionary of parameters needed to define the simulation
         clock.
-    
+
     start_time : `float`
         Clock start time.
     time : `float`
@@ -586,8 +654,8 @@ class SimulationClock:
         if "num_steps" in input_data:
             self.num_steps = input_data["num_steps"]
             self.dt = (
-                (input_data["end_time"] - input_data["start_time"])
-                / input_data["num_steps"])
+                    (input_data["end_time"] - input_data["start_time"])
+                    / input_data["num_steps"])
         elif "dt" in input_data:
             self.dt = input_data["dt"]
             self.num_steps = (self.end_time - self.start_time) / self.dt
@@ -602,13 +670,13 @@ class SimulationClock:
         self.time = self.start_time + self.dt * self.this_step
         if self.print_time:
             print(f"t = {self.time:0.4e}")
-    
+
     def turn_back(self, num_steps=1):
         """Set the time back `num_steps` time steps"""
         self.this_step = self.this_step - num_steps
         self.time = self.start_time + self.dt * self.this_step
         if self.print_time:
-            print(f"t = {self.time}")        
+            print(f"t = {self.time}")
 
     def is_running(self):
         """Check if time is less than end time"""
@@ -660,6 +728,7 @@ class Grid:
         Inverse of coordinate values at each Grid point,
         1/:class:`Grid.r`.
     """
+
     def __init__(self, input_data: dict):
         self._input_data = input_data
         self.r_min = None
@@ -807,7 +876,7 @@ class Grid:
                                     "in the grid")
         if len(i) == 1:
             return lambda y: y[i]
-        if len(i) == 2:
+        else:
             # linearly interpolate
             def interpval(yvec):
                 """A function which takes a grid quantity ``y`` and
@@ -849,17 +918,17 @@ class Grid:
 
     def set_cartesian_volumes(self):
         self.cell_volumes = self.cell_edges[1:] - self.cell_edges[:-1]
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_cylindrical_volumes(self):
         scratch = self.cell_edges ** 2
         self.cell_volumes = np.pi * (scratch[1:] - scratch[:-1])
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_spherical_volumes(self):
         scratch = self.cell_edges ** 3
-        self.cell_volumes = 4/3 * np.pi * (scratch[1:] - scratch[:-1])
-        self.inverse_cell_volumes = 1./self.cell_volumes
+        self.cell_volumes = 4 / 3 * np.pi * (scratch[1:] - scratch[:-1])
+        self.inverse_cell_volumes = 1. / self.cell_volumes
 
     def set_cartesian_areas(self):
         self.interface_areas = np.ones_like(self.cell_edges)
@@ -880,8 +949,8 @@ class Grid:
         self.interface_volumes[-1] = self.cell_volumes[-1]
 
         self.inverse_interface_volumes[0] = self.inverse_cell_volumes[0]
-        self.inverse_interface_volumes[1:-1] = 0.5 * (self.inverse_cell_volumes[1:]
-                                                      + self.inverse_cell_volumes[0:-1])
+        self.inverse_interface_volumes[1:-1] = 0.5 * \
+            (self.inverse_cell_volumes[1:] + self.inverse_cell_volumes[0:-1])
         self.inverse_interface_volumes[-1] = self.inverse_cell_volumes[-1]
 
     def __repr__(self):
@@ -910,6 +979,12 @@ class Diagnostic(DynamicFactory):
     _input_data: `dict`
         Dictionary that contains user defined parameters about this
         object such as its name.
+    _needed_resources: `dict`
+        Dictionary that lists shared resources that this module
+        needs. Format is `{shared_key: variable_name}`, where
+        `shared_key` is a string with the name of needed resource,
+        and `variable_name` is a string to use when saving this
+        variable. For example: {"Fields:E": "E"} will make `self.E`.
     """
 
     _factory_type_name = "Diagnostic"
@@ -919,12 +994,20 @@ class Diagnostic(DynamicFactory):
         self._owner = owner
         self._input_data = input_data
 
-    def inspect_resource(self, resource: dict):
-        """Save references to data from other PhysicsModules
+        # Items should have key "shared_name", and value is the variable
+        # name for the "pointer"
+        # For example: {"Fields:E": "E"} will make self.E
+        self._needed_resources = {}
 
+    def inspect_resource(self, resource: dict):
+        """**Deprecated**
+
+        *This method is only here for backwards compatability. New
+        code should use the ``_needed_resources`` dictionary.*
+
+        Save references to data from other PhysicsModules
         If your subclass needs the data described by the key, now's
         their chance to save a reference to the data
-
         Parameters
         ----------
         resource: `dict`
@@ -932,6 +1015,16 @@ class Diagnostic(DynamicFactory):
             PhysicsModules.
         """
         pass
+
+    def inspect_resources(self):
+        for shared_name, var_name in self._needed_resources.items():
+            if shared_name not in self._owner.all_shared_resources:
+                warnings.warn(f"Diagnostic {self.__class__.__name__} can't "
+                              f"find needed resource {shared_name}")
+            else:
+                self.__dict__[var_name] = self._owner.all_shared_resources[
+                                              shared_name
+                                          ]
 
     def diagnose(self):
         """Perform diagnostic step
@@ -968,3 +1061,14 @@ class Diagnostic(DynamicFactory):
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._input_data})"
+
+
+def wrap_item_in_list(item):
+    if type(item) is list:
+        return item
+    else:
+        return [item]
+
+
+def make_values_into_lists(dictionary):
+    return {k: wrap_item_in_list(v) for k, v in dictionary.items()}
