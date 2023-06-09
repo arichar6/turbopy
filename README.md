@@ -61,7 +61,7 @@ If you used turboPy, please cite the specific version of the code that you used.
 
 For example, a citation for version v2023.06.08 should look like this:
 
-> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2020, October 14). NRL-Plasma-Physics-Division/turbopy: v2023.06.08 (Version v2023.06.08). Zenodo. https://doi.org/10.5281/zenodo.4088189
+> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2023, June 08). NRL-Plasma-Physics-Division/turbopy: v2023.06.08 (Version v2023.06.08). Zenodo. https://doi.org/10.5281/zenodo.4088189
 
 While bibtex styles vary, the above output can be created by an entry something like this:
 
