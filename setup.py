@@ -11,9 +11,9 @@ DESCRIPTION = ('A lightweight computational physics framework, which '
                'implements a "Simulation, PhysicsModule, ComputeTool" '
                'class hierarchy.')
 URL = 'https://github.com/NRL-Plasma-Physics-Division/turbopy'
-EMAIL = 'steve.richardson@nrl.navy.mil'
-AUTHOR = 'Steve Richardson'
-REQUIRES_PYTHON = '>=3.7.0'
+EMAIL = 'ndisner10@gmail.com'
+AUTHOR = 'Nancy Isner'
+REQUIRES_PYTHON = '>=3.9.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
