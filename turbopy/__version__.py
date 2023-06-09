@@ -1,3 +1,3 @@
 """Define a version number for turboPy"""
-VERSION = ('2023', '06', '08')
+VERSION = ('2023', '06', '08a')
 __version__ = '.'.join(map(str, VERSION))
