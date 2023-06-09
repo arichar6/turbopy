@@ -59,22 +59,22 @@ Also, we would appreciate it if you would cite turboPy. There are a few ways you
 
 If you used turboPy, please cite the specific version of the code that you used. We use Zenodo to create DOIs and archive our code. You can find the DOI for the version that you used on [our Zenodo page](https://doi.org/10.5281/zenodo.3973692)
 
-For example, a citation for version v2020.10.14 should look like this:
+For example, a citation for version v2023.06.08 should look like this:
 
-> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2020, October 14). NRL-Plasma-Physics-Division/turbopy: v2020.10.14 (Version v2020.10.14). Zenodo. https://doi.org/10.5281/zenodo.4088189
+> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2020, October 14). NRL-Plasma-Physics-Division/turbopy: v2023.06.08 (Version v2023.06.08). Zenodo. https://doi.org/10.5281/zenodo.4088189
 
 While bibtex styles vary, the above output can be created by an entry something like this:
 
 ```bibtex
-@software{turbopy_v2020.10.14,
+@software{turbopy_v2023.06.08,
 	author = {A. S. Richardson and P. E. Adamson and G. Tang and A. Ostenfeld and G. T. Morgan and C. G. Sun and D. J. Watkins and O. S. Grannis and K. L. Phlips and S. B. Swanekamp},
 	doi = {10.5281/zenodo.4088189},
-	month = {October 14},
+	month = {June 08},
 	publisher = {Zenodo},
-	title = {{NRL-Plasma-Physics-Division/turbopy: v2020.10.14}},
+	title = {{NRL-Plasma-Physics-Division/turbopy: v2023.06.08}},
 	url = {https://doi.org/10.5281/zenodo.4088189},
-	version = {v2020.10.14},
-	year = 2020,
+	version = {v2023.06.08},
+	year = 2023,
 }
 ```
 
@@ -97,7 +97,7 @@ An example citation and bibtex entry for the concept DOI would look something li
 	publisher = {Zenodo},
 	title = {{NRL-Plasma-Physics-Division/turbopy}},
 	url = {https://doi.org/10.5281/zenodo.3973692},
-	year = 2020,
+	year = 2023,
 }
 ```
 
