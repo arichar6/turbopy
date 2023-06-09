@@ -775,7 +775,7 @@ class Grid:
                 raise (RuntimeError("Invalid grid spacing: "
                                     "configuration does not imply "
                                     "integer number of grid points"))
-            self.num_points = np.int(self.num_points)
+            self.num_points = np.int64(self.num_points)
 
         # set the coordinate system
         if "coordinate_system" in self._input_data:
