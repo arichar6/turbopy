@@ -59,21 +59,21 @@ Also, we would appreciate it if you would cite turboPy. There are a few ways you
 
 If you used turboPy, please cite the specific version of the code that you used. We use Zenodo to create DOIs and archive our code. You can find the DOI for the version that you used on [our Zenodo page](https://doi.org/10.5281/zenodo.3973692)
 
-For example, a citation for version v2023.06.08a should look like this:
+For example, a citation for version v2023.06.09 should look like this:
 
-> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2023, June 08). NRL-Plasma-Physics-Division/turbopy: v2023.06.08a (Version v2023.06.08a). Zenodo. https://doi.org/10.5281/zenodo.4088189
+> A. S. Richardson, P. E. Adamson, G. Tang, A. Ostenfeld, G. T. Morgan, C. G. Sun, D. J. Watkins, O. S. Grannis, K. L. Phlips, and S. B. Swanekamp. (2023, June 09). NRL-Plasma-Physics-Division/turbopy: v2023.06.09 (Version v2023.06.09). Zenodo. https://doi.org/10.5281/zenodo.4088189
 
 While bibtex styles vary, the above output can be created by an entry something like this:
 
 ```bibtex
-@software{turbopy_v2023.06.08a,
+@software{turbopy_v2023.06.09,
 	author = {A. S. Richardson and P. E. Adamson and G. Tang and A. Ostenfeld and G. T. Morgan and C. G. Sun and D. J. Watkins and O. S. Grannis and K. L. Phlips and S. B. Swanekamp},
 	doi = {10.5281/zenodo.4088189},
-	month = {June 08},
+	month = {June 09},
 	publisher = {Zenodo},
-	title = {{NRL-Plasma-Physics-Division/turbopy: v2023.06.08a}},
+	title = {{NRL-Plasma-Physics-Division/turbopy: v2023.06.09}},
 	url = {https://doi.org/10.5281/zenodo.4088189},
-	version = {v2023.06.08a},
+	version = {v2023.06.09},
 	year = 2023,
 }
 ```

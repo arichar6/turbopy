@@ -26,8 +26,8 @@ def test_push_with_no_fields():
     mass = 1.6726e-27
     E = np.zeros(3)
     B = np.zeros(3)
-    x_i = np.array([[0, 0, 0.0]], dtype=np.float)
-    v_i = np.array([[0, 0, 3.0e2]], dtype=np.float)
+    x_i = np.array([[0, 0, 0.0]], dtype=np.float64)
+    v_i = np.array([[0, 0, 3.0e2]], dtype=np.float64)
     p_i = mass * v_i
     clock = input_data["Clock"]
     N = 10
@@ -50,10 +50,10 @@ def test_push_with_crossed_fields():
     charge = 1.6022e-19
     mass = 1.6726e-27
     N = 10
-    x_i = np.array([[0, 0, 0.0]], dtype=np.float)
-    p_i = np.array([[0, 0, 0.0]], dtype=np.float)
-    E = np.array([[10, 0, 0]], dtype=np.float)
-    B = np.array([[0, 0, 10]], dtype=np.float)
+    x_i = np.array([[0, 0, 0.0]], dtype=np.float64)
+    p_i = np.array([[0, 0, 0.0]], dtype=np.float64)
+    E = np.array([[10, 0, 0]], dtype=np.float64)
+    B = np.array([[0, 0, 10]], dtype=np.float64)
     for i in range(N):
         push_example.push(x_i, p_i, charge, mass, E, B)
     x_final = np.array([[2.20028479e-09, -1.04482737e-08, 0]])
