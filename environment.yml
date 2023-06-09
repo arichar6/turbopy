@@ -12,7 +12,8 @@ dependencies:
         - sphinx
         - pip
         - pip:
-                - qtoml
-                - livereload
-                - formic2
-                - sphobjinv
+          - qtoml
+          - livereload
+          - formic2
+          - sphobjinv
+          - sphinx_rtd_theme
